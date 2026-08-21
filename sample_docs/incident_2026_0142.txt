@@ -1,0 +1,37 @@
+Incident Report INC-2026-0142
+Severity: High
+Affected System: Internal API Gateway (api-gw-prod-03)
+Date Detected: 2026-03-14
+
+Summary:
+An anomalous spike in 401 Unauthorized responses was detected on api-gw-prod-03
+between 02:14 and 02:47 UTC. Analysis of access logs showed 4,812 requests
+originating from a single external IP address (203.0.113.44) attempting to
+authenticate using a credential-stuffing pattern against the /v1/auth/login
+endpoint.
+
+Root Cause:
+The attacker used a list of previously leaked credentials (sourced from an
+unrelated third-party breach) to attempt automated login. Rate limiting on the
+login endpoint was configured at 100 requests/minute per IP, which the attacker
+bypassed by rotating through a small pool of proxy IPs.
+
+Impact:
+No successful authentications were recorded. However, the request volume caused
+elevated CPU usage (78% sustained) on the gateway, degrading response times for
+legitimate traffic by approximately 300ms during the incident window.
+
+Remediation Actions Taken:
+1. Blocked the source IP range at the WAF (Web Application Firewall) level.
+2. Reduced per-IP rate limit on /v1/auth/login from 100/min to 20/min.
+3. Enabled CAPTCHA challenge after 3 failed login attempts from the same IP.
+4. Rotated and force-reset any internal service credentials that appeared in
+   the leaked credential list, out of an abundance of caution.
+
+Recommendations:
+- Implement device fingerprinting in addition to IP-based rate limiting, since
+  IP rotation defeats simple per-IP throttling.
+- Subscribe to a credential-leak monitoring service to proactively identify
+  when employee or service credentials appear in breach dumps.
+- Consider moving authentication to a managed identity provider with built-in
+  bot and credential-stuffing protection.

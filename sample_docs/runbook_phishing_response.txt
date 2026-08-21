@@ -1,0 +1,48 @@
+Runbook: Phishing Email Response
+Owner: Security Operations Team
+Last Reviewed: 2026-01-10
+
+Purpose:
+This runbook defines the steps an analyst should take when a user reports a
+suspected phishing email, or when a phishing campaign is detected via email
+security tooling.
+
+Step 1 - Triage:
+Confirm the report is genuine phishing and not a false positive. Check sender
+domain reputation, look for spoofed display names, and inspect any links
+using a sandboxed URL scanner before clicking anything directly.
+
+Step 2 - Containment:
+If the email is confirmed malicious:
+- Use the email security gateway to purge the message from all mailboxes it
+  was delivered to, not just the reporting user's inbox.
+- Block the sending domain and any embedded malicious URLs at the email
+  gateway and web proxy.
+- If the user clicked a link or entered credentials, force a password reset
+  immediately and revoke active sessions for that account.
+
+Step 3 - Investigation:
+- Identify all recipients of the campaign using the email gateway's delivery
+  logs.
+- Check authentication logs for any of the recipients for suspicious login
+  activity in the 24 hours following the campaign.
+- Determine whether the phishing kit is targeting a specific department
+  (finance, HR, and engineering are the most commonly targeted).
+
+Step 4 - Eradication and Recovery:
+- For any compromised accounts, reset credentials, revoke OAuth tokens and
+  active sessions, and review recent account activity for unauthorized
+  changes (mail forwarding rules are a common persistence technique).
+- Remove any malware if a link led to a payload download, using EDR tooling.
+
+Step 5 - Post-Incident:
+- Notify affected users and provide guidance.
+- File an incident report if any account was compromised or if the campaign
+  reached more than 25 recipients.
+- Consider targeted phishing-awareness training for the affected department.
+
+Common Indicators of Phishing in This Organization:
+- Urgency language ("your account will be suspended")
+- Requests to update payment or banking details
+- Sender domains that closely resemble internal domains (lookalike domains)
+- Unexpected attachments claiming to be invoices or shipping documents

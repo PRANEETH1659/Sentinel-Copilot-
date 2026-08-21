@@ -1,0 +1,42 @@
+[
+  {
+    "timestamp": "2026-08-20T02:14:00Z",
+    "host": "WKSTN-042",
+    "event": "Suspicious process 'encryptor.exe' spawned by winword.exe"
+  },
+  {
+    "timestamp": "2026-08-20T02:14:05Z",
+    "host": "WKSTN-042",
+    "event": "Mass file rename activity detected in C:\\Users\\jsmith\\Documents (pattern consistent with ransomware)"
+  },
+  {
+    "timestamp": "2026-08-20T02:15:30Z",
+    "host": "WKSTN-042",
+    "event": "Endpoint isolated from network by EDR auto-containment rule"
+  },
+  {
+    "timestamp": "2026-08-19T23:02:11Z",
+    "host": "MAIL-GW-01",
+    "event": "Inbound email flagged: sender spoofing detected, subject 'Invoice Overdue - Action Required'"
+  },
+  {
+    "timestamp": "2026-08-19T23:05:44Z",
+    "host": "WKSTN-017",
+    "event": "User clicked link in flagged phishing email"
+  },
+  {
+    "timestamp": "2026-08-19T23:06:02Z",
+    "host": "WKSTN-017",
+    "event": "Outbound connection attempt to known-bad domain blocked by proxy"
+  },
+  {
+    "timestamp": "2026-08-18T10:00:00Z",
+    "host": "SRV-DB-02",
+    "event": "Nightly backup completed successfully"
+  },
+  {
+    "timestamp": "2026-08-18T09:12:41Z",
+    "host": "SRV-WEB-01",
+    "event": "Failed SSH login attempts from unrecognized IP (5 attempts, then blocked)"
+  }
+]

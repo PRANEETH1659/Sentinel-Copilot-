@@ -1,0 +1,35 @@
+version: "3.8"
+
+# SentinelCopilot - local, free infrastructure
+# Everything here runs on YOUR machine. No cloud account, no billing.
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: sentinel-es
+    environment:
+      # Single-node = no clustering needed for a demo project
+      - discovery.type=single-node
+      # Security is OFF purely for local-dev simplicity. Never do this in production.
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  es_data:
+
+# NOTE: Ollama is NOT in this file on purpose. On Windows, Ollama runs as a
+# native background service (installed separately) so it can use your GPU
+# properly. It's reachable at http://localhost:11434 from our Python code.
+#
+# Qdrant, Redis, and Redpanda (our Kafka stand-in) will be added to this file
+# in later phases, once we're actually using them - no point running
+# containers we don't need yet.

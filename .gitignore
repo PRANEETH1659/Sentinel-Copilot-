@@ -1,0 +1,17 @@
+# Virtual environment - just installed packages, not your code.
+# Anyone cloning this repo re-creates it with `pip install -r requirements.txt`.
+venv/
+env/
+.venv/
+
+# Python cache/bytecode
+__pycache__/
+*.pyc
+
+# Secrets/local overrides, if you ever add a .env file
+.env
+
+# Editor/OS clutter
+.vscode/
+.idea/
+.DS_Store

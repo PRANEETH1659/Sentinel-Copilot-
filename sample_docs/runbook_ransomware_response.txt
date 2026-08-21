@@ -1,0 +1,50 @@
+Runbook: Ransomware Response
+Owner: Security Operations Team
+Last Reviewed: 2026-02-02
+
+Purpose:
+Defines immediate actions when ransomware activity is suspected or confirmed
+on any company-owned endpoint or server.
+
+Step 1 - Isolate Immediately:
+Disconnect the affected host from the network (unplug ethernet or disable
+Wi-Fi) but do NOT power it off. Powering off can destroy volatile memory
+evidence needed for forensic analysis and may trigger destructive payloads
+in some ransomware families.
+
+Step 2 - Identify Scope:
+- Check EDR telemetry for lateral movement indicators from the patient-zero
+  host: unusual SMB traffic, new scheduled tasks, or suspicious use of admin
+  tools like PsExec or WMI.
+- Identify which file shares or backup systems the compromised account had
+  access to, since ransomware often targets backups first.
+
+Step 3 - Contain:
+- Disable the compromised user account(s) at the identity provider.
+- Isolate any additional hosts showing lateral movement indicators.
+- Block identified command-and-control IPs/domains at the firewall.
+- Preserve, do not delete, encrypted files - they may be needed for a
+  decryption tool if one becomes available, and are required for forensics.
+
+Step 4 - Assess and Decide:
+- Determine backup integrity: are recent, uninfected backups available?
+- Engage legal and executive leadership before any decision involving
+  ransom payment; this is a business and legal decision, never made
+  unilaterally by the security team.
+- Engage external incident response support if internal capacity is
+  insufficient for the scope of the incident.
+
+Step 5 - Recovery:
+- Rebuild affected systems from known-clean images rather than attempting
+  to "clean" a compromised host.
+- Restore data from verified clean backups only.
+- Rotate all credentials that were accessible from compromised systems,
+  including service accounts and API keys.
+
+Step 6 - Post-Incident:
+- Conduct a full root-cause analysis: how did the initial access occur
+  (phishing, exposed RDP, unpatched vulnerability)?
+- Update detection rules based on the specific indicators observed.
+- File a formal incident report; ransomware incidents typically require
+  notification to regulators or affected customers depending on data
+  exposure.

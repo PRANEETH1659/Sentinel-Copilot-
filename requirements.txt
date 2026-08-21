@@ -1,0 +1,11 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+elasticsearch==8.15.0
+requests==2.32.3
+pydantic==2.9.2
+python-dotenv==1.0.1
+
+# Phase 2 - agent orchestration
+langgraph==1.2.11
+langchain-core==1.6.0
+langchain-ollama==1.1.0
