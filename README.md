@@ -1,8 +1,16 @@
-# SentinelCopilot - Phase 1: Hybrid RAG Core
+# SentinelCopilot - Hybrid RAG Core + Agent
 
 An AI security-operations copilot that answers questions by hybrid-searching
 (keyword + semantic) a knowledge base of incident reports and runbooks, then
 asks a locally-running LLM to answer using only that retrieved context.
+
+Two phases are built and working:
+
+- **Phase 1** (`/ask`) - always runs one fixed hybrid search, then answers.
+- **Phase 2** (`/ask-agent`) - a LangGraph agent decides *which* tool(s) to
+  use (knowledge base, logs, or both) before it answers.
+
+Both endpoints stay live side by side on purpose, so you can compare them.
 
 **Cost: $0.** Everything below runs on your own machine.
 
@@ -59,6 +67,25 @@ search earn its keep, e.g. "how do we handle credential stuffing attacks"
 even though the incident report never uses the phrase "credential stuffing"
 in that exact wording everywhere.
 
+**6. Ask the agent instead (Phase 2)**
+
+Same request shape, different endpoint - this one lets the model pick its
+own tools rather than always running one fixed search:
+```powershell
+curl -X POST http://localhost:8000/ask-agent -H "Content-Type: application/json" -d "{\"question\": \"Anything suspicious on WKSTN-042?\"}"
+```
+
+Three questions worth trying, because each takes a different path through
+the agent:
+- *"What is the ransomware runbook about?"* -> picks `search_knowledge_base`
+- *"Anything suspicious on WKSTN-042?"* -> picks `search_logs` instead
+- *"Did the ransomware runbook get followed on WKSTN-042?"* -> calls BOTH
+  tools before answering. This is the one that actually proves the loop
+  works, rather than just proving it can pick a tool.
+
+There's also a `GET /health` that returns `{"status": "ok"}` when the API is
+up - handy for confirming the server started without asking it a question.
+
 You can also open **http://localhost:8000/docs** in a browser for a free
 interactive UI (FastAPI generates this automatically) instead of using curl.
 
@@ -74,6 +101,11 @@ interactive UI (FastAPI generates this automatically) instead of using curl.
 3. The top merged chunks get stuffed into a prompt and sent to your local
    Llama 3.2 model via Ollama, which answers using only that context.
 4. FastAPI (`app/main.py`) exposes this as a simple HTTP API.
+5. For `/ask-agent`, `app/agent.py` wraps steps 2-3 in a LangGraph loop: a
+   `think` node where the model decides which tool fits (or that it already
+   has enough to answer), and an `act` node that runs whichever tool it
+   picked - looping back to `think` after each one. `app/tools.py` defines
+   the two tools it chooses between.
 
 ## Troubleshooting
 
@@ -86,10 +118,21 @@ interactive UI (FastAPI generates this automatically) instead of using curl.
 - Empty/weird answers -> check `docker compose logs elasticsearch` and make
   sure ingest actually ran (`python -m app.ingest`) before you started asking
   questions.
+- `/ask-agent` gives an empty answer or picks odd tools -> smaller local
+  models are hit-and-miss at emitting well-formed tool calls. Check `/ask`
+  first: if that works, retrieval is fine and it's the model's tool-calling,
+  not your setup.
 
-## What's next (Phase 2)
+## What's next (Phase 3+)
 
-Once this is working end-to-end, we'll wrap it in a LangGraph agent that can
-decide *which* tool to use (search knowledge base vs. search live logs vs.
-summarize) instead of always doing a single fixed retrieval step - that's
-what turns this from "a search box" into "a copilot."
+Phase 2's `search_logs` currently reads a small local mock file
+(`sample_logs/mock_logs.json`). Still ahead:
+
+- **Phase 3** - production hardening: Redis caching, streaming responses,
+  latency tracing.
+- **Phase 4** - event-driven ingestion: Kafka/Redpanda feeding live alerts,
+  which is what `search_logs` will read from instead of the mock file.
+- **Phase 5** - governance and deployment: audit logging, RBAC, PII
+  redaction, Docker/Kubernetes, CI/CD.
+
+See `PROGRESS.md` for the detailed build log.
