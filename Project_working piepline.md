@@ -49,3 +49,26 @@ Edges=the arrows connecting nodes
 
 2.Conditional edge:
 This is the smart one.It looks at what just happend and decides which node to go next. This is literally where your "receptionist deciding which department"
+
+---
+
+UPDATE (written after the code was actually built, so these notes match
+app/agent.py):
+
+The 4-node list above was the plan. What got built is simpler - TWO nodes:
+
+  think - decide_tool and generate_answer rolled into one node. Each time
+          the model runs it either asks for a tool, or writes the final
+          answer. Same node does both jobs.
+
+  act   - LangGraph's prebuilt ToolNode. It runs whichever tool the model
+          just asked for, so search_knowledge_base and search_logs both sit
+          behind this ONE node, instead of being a node each.
+
+Which makes the edges:
+  - Conditional edge out of think: asked for a tool -> act, otherwise -> END
+  - Normal edge out of act: always straight back to think
+
+So the receptionist is `think`. It decides the department, `act` does the
+work, and it always comes back to reception - looping until there is
+nothing left to route, which is when the final answer comes out.

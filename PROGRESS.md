@@ -88,10 +88,17 @@ multiple tools, instead of always running one fixed retrieval step.
 - [x] `agent.py`'s graph builds with the expected two nodes (`think`, `act`)
 - [x] `search_logs` tool correctly finds/misses entries in the mock log file
 
-### Still to confirm on Praneeth's machine
-- [ ] `pip install -r requirements.txt` (venv activated) picks up the three
-      new packages without conflicts
-- [ ] `uvicorn app.main:app --reload` starts with no import errors
+### Confirmed against the real venv on this machine (2026-08-22)
+- [x] `pip install -r requirements.txt` picked up the three new packages
+      without conflicts — `pip freeze` shows all 9 pinned versions matching
+      `requirements.txt` exactly, so a fresh clone reproduces this setup
+- [x] `app.main` imports cleanly with all three routes registered
+      (`/ask`, `/ask-agent`, `/health`) — so uvicorn has no import errors
+- [x] Re-ran the isolated-env checks above against the real venv: the
+      compiled graph reports its two nodes, and `search_logs` returns real
+      matches for `WKSTN-042`
+
+### Still to confirm — these need Elasticsearch + Ollama actually running
 - [ ] `POST /ask-agent` with a knowledge-base-style question (e.g. "What is
       the ransomware runbook about?") picks `search_knowledge_base` and
       returns sources like `/ask` does
@@ -101,6 +108,25 @@ multiple tools, instead of always running one fixed retrieval step.
       followed on WKSTN-042?") makes the agent call both tools before
       answering — this is the one that actually proves the loop, not just
       the tool-picking
+
+---
+
+## Published to GitHub — 2026-08-22
+
+- [x] Secrets audit before the first push: no `.env`, keys, certs or tokens
+      anywhere in the tree, and `app/config.py` is all `os.getenv` with
+      localhost defaults. The only hits for "credential" were the word
+      itself inside the fictional runbook prose
+- [x] `.gitignore` confirmed doing its job — `venv/` and `__pycache__/`
+      were the only things excluded. 19 files, 998 lines, 124K total
+- [x] Pushed to https://github.com/PRANEETH1659/Sentinel-Copilot-
+- [x] `README.md` brought up to date with Phase 2 (`/ask-agent`, `/health`,
+      and the think/act loop) — it had still described the agent as future
+      work, which contradicted the code that was already built
+
+Reminder for a fresh clone: Docker has to be running, and both
+`ollama pull llama3.2` and `ollama pull nomic-embed-text` have to be done,
+before `python -m app.ingest` will work.
 
 ---
 
