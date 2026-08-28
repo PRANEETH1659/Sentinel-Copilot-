@@ -12,6 +12,12 @@ Two phases are built and working:
 
 Both endpoints stay live side by side on purpose, so you can compare them.
 
+Python files in `app/` are suffixed with the phase that created them -
+`rag_ph1.py`, `agent_ph2.py` - so you can see which phase a file belongs to
+without opening it. The suffix marks where a file was born, not the last
+phase to touch it (`main_ph1.py` is Phase 1 even though Phase 2 added
+`/ask-agent` to it). See `PROGRESS.md` for the full rule.
+
 **Cost: $0.** Everything below runs on your own machine.
 
 ## Prerequisites (do these once)
@@ -46,7 +52,7 @@ pip install -r requirements.txt
 
 **3. Ingest the sample documents**
 ```powershell
-python -m app.ingest
+python -m app.ingest_ph1
 ```
 This reads the 3 sample files in `sample_docs/`, splits them into chunks,
 embeds each chunk with Ollama, and indexes them into Elasticsearch. You
@@ -54,7 +60,7 @@ should see output like `Indexed 4 chunks from incident_2026_0142.txt`.
 
 **4. Start the API**
 ```powershell
-uvicorn app.main:app --reload
+uvicorn app.main_ph1:app --reload
 ```
 
 **5. Ask it something** (in a new PowerShell window, venv still active or not - this is just a plain HTTP call)
@@ -91,20 +97,20 @@ interactive UI (FastAPI generates this automatically) instead of using curl.
 
 ## What's actually happening
 
-1. `app/ingest.py` splits each `.txt` file into overlapping chunks and stores
+1. `app/ingest_ph1.py` splits each `.txt` file into overlapping chunks and stores
    each chunk in Elasticsearch twice: once as plain text (for keyword search)
    and once as a vector (for semantic search).
-2. `app/rag.py` takes your question, runs BOTH a keyword search and a
+2. `app/rag_ph1.py` takes your question, runs BOTH a keyword search and a
    semantic search against Elasticsearch, then merges the two ranked result
    lists using Reciprocal Rank Fusion (RRF) - see the big comment in that
    file for exactly how and why.
 3. The top merged chunks get stuffed into a prompt and sent to your local
    Llama 3.2 model via Ollama, which answers using only that context.
-4. FastAPI (`app/main.py`) exposes this as a simple HTTP API.
-5. For `/ask-agent`, `app/agent.py` wraps steps 2-3 in a LangGraph loop: a
+4. FastAPI (`app/main_ph1.py`) exposes this as a simple HTTP API.
+5. For `/ask-agent`, `app/agent_ph2.py` wraps steps 2-3 in a LangGraph loop: a
    `think` node where the model decides which tool fits (or that it already
    has enough to answer), and an `act` node that runs whichever tool it
-   picked - looping back to `think` after each one. `app/tools.py` defines
+   picked - looping back to `think` after each one. `app/tools_ph2.py` defines
    the two tools it chooses between.
 
 ## Troubleshooting
@@ -116,7 +122,7 @@ interactive UI (FastAPI generates this automatically) instead of using curl.
   the model wasn't pulled. Test with `ollama run nomic-embed-text` /
   `ollama run llama3.2` directly.
 - Empty/weird answers -> check `docker compose logs elasticsearch` and make
-  sure ingest actually ran (`python -m app.ingest`) before you started asking
+  sure ingest actually ran (`python -m app.ingest_ph1`) before you started asking
   questions.
 - `/ask-agent` gives an empty answer or picks odd tools -> smaller local
   models are hit-and-miss at emitting well-formed tool calls. Check `/ask`

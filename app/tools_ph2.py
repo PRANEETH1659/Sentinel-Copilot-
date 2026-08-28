@@ -11,11 +11,11 @@ import os
 
 from langchain_core.tools import tool
 
-from .rag import hybrid_search
+from .rag_ph1 import hybrid_search
 
 # ---------------------------------------------------------------------------
 # Tool 1: the SAME Elasticsearch hybrid search from Phase 1 (BM25 + kNN +
-# Reciprocal Rank Fusion, all still living in app/rag.py). Nothing about the
+# Reciprocal Rank Fusion, all still living in app/rag_ph1.py). Nothing about the
 # search itself changed - it's just wrapped so the agent can call it as one
 # option instead of it being the only, hardcoded step.
 # ---------------------------------------------------------------------------

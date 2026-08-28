@@ -2,7 +2,7 @@
 Just a box that runs Elasticsearch on your machine without messing up your Windows setup. Like renting a small room just for the library's filing cabinets, so they don't clutter your house. You don't interact with Docker directly once it's running — it just quietly keeps Elasticsearch alive in the background.
 
 🔍 Elasticsearch
-This is the library's filing cabinet + index card system. When you ran ingest.py, your 3 documents got chopped into 11 chunks (like tearing a book into paragraphs) and stored here. It can search two ways:
+This is the library's filing cabinet + index card system. When you ran ingest_ph1.py, your 3 documents got chopped into 11 chunks (like tearing a book into paragraphs) and stored here. It can search two ways:
 
 Keyword search (BM25) — like searching "which pages contain the word ransomware"
 Vector/kNN search — searching by meaning, even if the exact word isn't there
@@ -53,7 +53,7 @@ This is the smart one.It looks at what just happend and decides which node to go
 ---
 
 UPDATE (written after the code was actually built, so these notes match
-app/agent.py):
+app/agent_ph2.py):
 
 The 4-node list above was the plan. What got built is simpler - TWO nodes:
 

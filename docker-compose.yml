@@ -1,5 +1,3 @@
-version: "3.8"
-
 # SentinelCopilot - local, free infrastructure
 # Everything here runs on YOUR machine. No cloud account, no billing.
 
@@ -7,6 +5,9 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     container_name: sentinel-es
+    # Comes back on its own whenever Docker Desktop starts, so you don't
+    # have to remember `docker compose up -d` after every reboot.
+    restart: unless-stopped
     environment:
       # Single-node = no clustering needed for a demo project
       - discovery.type=single-node

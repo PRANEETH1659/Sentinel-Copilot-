@@ -16,6 +16,6 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 # size, or Elasticsearch will reject every document at index time.
 EMBED_DIMS = 768
 
-# How we split long documents before embedding them (see app/ingest.py for why).
+# How we split long documents before embedding them (see app/ingest_ph1.py for why).
 CHUNK_SIZE_CHARS = 800
 CHUNK_OVERLAP_CHARS = 150

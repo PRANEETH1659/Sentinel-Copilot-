@@ -4,9 +4,9 @@
 
 import requests
 
-from . import config
-from .embeddings import embed_text
-from .es_client import bm25_search, get_client, knn_search
+from . import config_ph1 as config
+from .embeddings_ph1 import embed_text
+from .es_client_ph1 import bm25_search, get_client, knn_search
 
 
 
@@ -47,7 +47,7 @@ def reciprocal_rank_fusion(result_lists: list[list[dict]], k: int = 60) -> list[
 
 def hybrid_search(query: str, top_n: int = 5) -> list[dict]:
     es = get_client()
-    query_vector = embed_text(query)
+    query_vector = embed_text(query) # only for knn we are doing this one .
 
     bm25_hits = bm25_search(es, query, k=10)
     knn_hits = knn_search(es, query_vector, k=10)

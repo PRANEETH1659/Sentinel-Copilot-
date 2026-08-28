@@ -5,12 +5,9 @@
 #step-3:Defining Methods BM25 and KNN 
 #step-4:Using them ,whereever they called.
 
-
-
-
 from elasticsearch import Elasticsearch
 
-from . import config
+from . import config_ph1 as config
 
 
 def get_client() -> Elasticsearch:

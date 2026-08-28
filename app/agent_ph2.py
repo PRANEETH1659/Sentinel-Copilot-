@@ -1,6 +1,6 @@
 # THIS FILE IS THE PHASE-2 "BRAIN LOOP".
 #
-# Phase 1 (app/rag.py, answer_question) always does exactly ONE fixed step:
+# Phase 1 (app/rag_ph1.py, answer_question) always does exactly ONE fixed step:
 # search Elasticsearch, then answer. This file replaces that fixed step with
 # a small loop: the model THINKS (decides which tool, if any, fits the
 # question), then ACTS (the chosen tool actually runs), then goes back to
@@ -22,8 +22,8 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from . import config
-from .tools import search_knowledge_base, search_logs
+from . import config_ph1 as config
+from .tools_ph2 import search_knowledge_base, search_logs
 
 TOOLS = [search_knowledge_base, search_logs]
 
@@ -78,7 +78,7 @@ agent = graph.compile()
 
 def ask_agent(question: str) -> dict:
     """Same shape as Phase 1's answer_question() - {"answer": ..., "sources":
-    [...]} - so main.py and anyone calling the API don't need to change how
+    [...]} - so main_ph1.py and anyone calling the API don't need to change how
     they read the response."""
     result = agent.invoke({"messages": [("user", question)]})
     final_message = result["messages"][-1]

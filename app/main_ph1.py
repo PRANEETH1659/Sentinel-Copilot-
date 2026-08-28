@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from .agent import ask_agent
-from .rag import answer_question
+from .agent_ph2 import ask_agent
+from .rag_ph1 import answer_question
 
 app = FastAPI(title="SentinelCopilot", version="0.2.0")
 

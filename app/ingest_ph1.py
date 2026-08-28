@@ -3,9 +3,9 @@
 import glob
 import os
 
-from . import config
-from .embeddings import embed_text
-from .es_client import ensure_index, get_client
+from . import config_ph1 as config
+from .embeddings_ph1 import embed_text
+from .es_client_ph1 import ensure_index, get_client
 
 
 def chunk_text(

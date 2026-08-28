@@ -1,8 +1,8 @@
-#PURPOSE OF THE FILE - CONVERTING THE CHUNKS INTO VECTORS (it is called in (ingest.py))
+#PURPOSE OF THE FILE - CONVERTING THE CHUNKS INTO VECTORS (it is called in (ingest_ph1.py))
 
 import requests
 
-from . import config
+from . import config_ph1 as config
 
 
 def embed_text(text: str) -> list[float]:
