@@ -24,6 +24,21 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: sentinel-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # No volume on purpose - this is a cache (app/cache_ph3.py), not a
+    # datastore. Losing it on a container restart just means the next
+    # question re-runs the full search+LLM path instead of hitting cache.
+
 volumes:
   es_data:
 
@@ -31,6 +46,6 @@ volumes:
 # native background service (installed separately) so it can use your GPU
 # properly. It's reachable at http://localhost:11434 from our Python code.
 #
-# Qdrant, Redis, and Redpanda (our Kafka stand-in) will be added to this file
-# in later phases, once we're actually using them - no point running
+# Qdrant and Redpanda (our Kafka stand-in) will be added to this file in
+# later phases, once we're actually using them - no point running
 # containers we don't need yet.

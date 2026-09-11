@@ -24,6 +24,7 @@ from langgraph.prebuilt import ToolNode
 
 from . import config_ph1 as config
 from .tools_ph2 import search_knowledge_base, search_logs
+from .tracing_ph3 import Trace
 
 TOOLS = [search_knowledge_base, search_logs]
 
@@ -92,7 +93,9 @@ def ask_agent(question: str) -> dict:
     """Same shape as Phase 1's answer_question() - {"answer": ..., "sources":
     [...]} - so main_ph1.py and anyone calling the API don't need to change how
     they read the response."""
-    result = agent.invoke({"messages": [("user", question)]})
+    trace = Trace()
+    with trace.step("agent_reasoning_ms"):
+        result = agent.invoke({"messages": [("user", question)]})
     final_message = result["messages"][-1]
 
     # Walk the conversation and pull out which source(s) each tool that
@@ -112,4 +115,41 @@ def ask_agent(question: str) -> dict:
             if not msg.content.startswith("No log entries found"):
                 sources.add("sample_logs/mock_logs.json")
 
-    return {"answer": final_message.content, "sources": sorted(sources)}
+    trace.log("ask-agent", question)
+    return {
+        "answer": final_message.content,
+        "sources": sorted(sources),
+        "timings": trace.steps,
+    }
+
+
+def ask_agent_stream(question: str):
+    """Same reasoning loop as ask_agent(), but yields the model's answer
+    tokens as they're generated instead of waiting for the whole graph to
+    finish. Uses LangGraph's stream_mode="messages", which streams every
+    chat-model call in the graph - including the one(s) that only emit a
+    tool call, whose chunks carry an empty content string. Only chunks with
+    real text get forwarded, so the caller sees just the final answer
+    stream in, with any tool calls happening silently in between exactly as
+    in ask_agent(). Tool RESULTS arrive as one complete ToolMessage (not
+    token-streamed, since they're not LLM output) - used here only to
+    collect sources, via the same per-tool logic as ask_agent()."""
+    sources = set()
+    for chunk, _metadata in agent.stream(
+        {"messages": [("user", question)]}, stream_mode="messages"
+    ):
+        tool_name = getattr(chunk, "name", None)
+
+        if tool_name == "search_knowledge_base":
+            for line in chunk.content.splitlines():
+                if line.startswith("[Source: "):
+                    sources.add(line[len("[Source: ") : -1])
+
+        elif tool_name == "search_logs":
+            if not chunk.content.startswith("No log entries found"):
+                sources.add("sample_logs/mock_logs.json")
+
+        elif chunk.content:
+            yield {"type": "answer", "content": chunk.content}
+
+    yield {"type": "sources", "content": sorted(sources)}

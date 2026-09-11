@@ -273,8 +273,86 @@ behavior, not something this fix touched.
 
 ---
 
-## Phase 3 — Production hardening (not started)
-Redis caching, streaming responses, latency tracing.
+## Phase 3 — Production hardening — 2026-09-11
+
+Three pieces: Redis caching, latency tracing, streaming responses. All
+three built, and all three verified against the live stack (Elasticsearch +
+Redis in Docker, Ollama native, `qwen2.5:7b`).
+
+### Code written
+- [x] `app/cache_ph3.py` - Redis get/set for `/ask` and `/ask-agent`
+      answers. Cache key = endpoint + question + current `CHAT_MODEL` (so a
+      future model swap, like the Phase 2 llama3.2 -> qwen2.5:7b change,
+      can never serve a stale answer from a different model). Fails open -
+      if Redis is unreachable, `get_cached_answer` returns `None` and
+      `set_cached_answer` silently no-ops, so a cache outage degrades to
+      "always recompute," not a broken API.
+- [x] `app/tracing_ph3.py` - a `Trace` class that times named steps within
+      one request. Deliberately not OpenTelemetry/Jaeger - this is one
+      Python process talking to two local dependencies, so a plain
+      step-timings dict answers "where did the time go?" with zero extra
+      infrastructure. `Trace` is always a fresh local object per request,
+      never shared/global state, so concurrent requests can't cross-
+      contaminate each other's timings.
+- [x] `redis` service added to `docker-compose.yml` (no volume - it's a
+      cache, not a datastore; losing it on restart just means the next
+      question recomputes)
+- [x] `REDIS_URL`, `CACHE_TTL_SECONDS` added to `app/config_ph1.py`
+- [x] `rag_ph1.answer_question` and `agent_ph2.ask_agent` both wrapped with
+      `Trace` and now return a `timings` dict (`hybrid_search_ms` +
+      `llm_generate_ms` for `/ask`; `agent_reasoning_ms` for `/ask-agent`)
+- [x] `main_ph1.py`: both endpoints check Redis before running and store
+      the result after; responses gained a `cached: bool` field. An
+      `X-Process-Time` response header plus a per-request log line were
+      added via FastAPI middleware.
+- [x] `rag_ph1.ask_ollama_stream` / `answer_question_stream` and
+      `agent_ph2.ask_agent_stream` - streaming counterparts that yield
+      `{"type": "answer"|"sources", "content": ...}` events instead of
+      returning one finished dict
+- [x] `POST /ask/stream` and `POST /ask-agent/stream` - Server-Sent Events
+      (`data: <json>\n\n`, closed with `data: [DONE]\n\n`). Both bypass the
+      Redis cache on purpose - caching a token stream (store it, then
+      replay it at the same pace or all at once?) is real complexity not
+      worth it here; every streaming call recomputes.
+
+### How the agent's streaming actually works
+`agent_ph2.ask_agent_stream` uses LangGraph's `agent.stream(...,
+stream_mode="messages")`, which streams every chat-model call in the graph
+- including the "think" turn that only emits a tool call. Verified
+empirically (not assumed) before writing the endpoint: a tool-call-only
+turn produces an `AIMessageChunk` with `content=""` and `node="think"`; the
+tool's result comes back as ONE complete `ToolMessage` on `node="act"` (not
+token-streamed, since it's not LLM output); the real answer streams in as a
+series of non-empty `AIMessageChunk`s. So the generator forwards only
+chunks with real text, and uses the `ToolMessage`s for source collection
+(same per-tool logic as `ask_agent`) - the caller sees just the final
+answer typing in, with tool calls happening silently in between exactly
+like the non-streaming endpoint.
+
+### Confirmed against the real venv (Elasticsearch + Redis + Ollama live)
+- [x] Redis and Elasticsearch containers both healthy via `docker compose up -d`
+- [x] `/ask` cache: first call `cached:false` with real timings
+      (`hybrid_search_ms=3425.3`, `llm_generate_ms=68098.2`); identical
+      second call `cached:true`, returned in 0.26s (measured with
+      `curl -w %{time_total}`) instead of ~71.5s
+- [x] `/ask-agent` cache: same pattern - first call `cached:false` with
+      `agent_reasoning_ms=167975.4`; second call `cached:true` in 0.26s
+- [x] `/ask/stream`: tokens arrive incrementally (confirmed by reading the
+      output file mid-stream, not just at the end), ends with a `sources`
+      event and `[DONE]`
+- [x] `/ask-agent/stream`: single-tool question (`search_logs`) streamed
+      cleanly - no leaked empty/tool-call chunks, real answer tokens only,
+      correct `sources` event, `[DONE]` at the end
+
+### Known limitation, not fixed (documented, out of scope for this phase)
+Local LLM generation on this machine is slow - ~68s for one `/ask` answer,
+~168s for a 3-tool-call `/ask-agent` compound question. Caching hides this
+for repeat questions but does nothing for the first one. Streaming (this
+phase) at least makes that first wait feel shorter, since text appears
+as it's generated instead of all at once. Actually reducing generation
+time would mean a smaller/faster model or a quantized build - not pursued
+here since it trades off against the qwen2.5:7b tool-calling quality fix
+from the previous session.
 
 ## Phase 4 — Event-driven ingestion (not started)
 Kafka/Redpanda producer + consumer for live alerts (this is what

@@ -19,3 +19,7 @@ EMBED_DIMS = 768
 # How we split long documents before embedding them (see app/ingest_ph1.py for why).
 CHUNK_SIZE_CHARS = 800
 CHUNK_OVERLAP_CHARS = 150
+
+# Phase 3 - production hardening
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "3600"))

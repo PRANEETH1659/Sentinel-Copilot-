@@ -2,11 +2,14 @@
 # It ties chunking ,searching, and LLM together into one final answer.
 
 
+import json
+
 import requests
 
 from . import config_ph1 as config
 from .embeddings_ph1 import embed_text
 from .es_client_ph1 import bm25_search, get_client, knn_search
+from .tracing_ph3 import Trace
 
 
 
@@ -83,17 +86,71 @@ def ask_ollama(prompt: str) -> str:
     return resp.json()["response"]
 
 
-def answer_question(question: str) -> dict:
+def ask_ollama_stream(prompt: str):
+    """Same call as ask_ollama(), but yields each token as Ollama generates
+    it instead of waiting for the full response. Ollama's streaming API
+    sends one JSON object per line; the last one has "done": true."""
+    resp = requests.post(
+        f"{config.OLLAMA_URL}/api/generate",
+        json={"model": config.CHAT_MODEL, "prompt": prompt, "stream": True},
+        timeout=120,
+        stream=True,
+    )
+    resp.raise_for_status()
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        chunk = json.loads(line)
+        if chunk.get("response"):
+            yield chunk["response"]
+        if chunk.get("done"):
+            break
+
+
+def answer_question_stream(question: str):
+    """Same retrieval as answer_question(), but yields the answer token by
+    token instead of returning it all at once. Retrieval itself isn't
+    streamed - hybrid_search has to finish before there's any context to
+    build a prompt from. Yields dicts of the shape {"type": ..., "content":
+    ...} so the caller (main_ph1.py) can tell an answer token apart from
+    the final sources list."""
     top_chunks = hybrid_search(question)
 
     if not top_chunks:
+        yield {
+            "type": "answer",
+            "content": "I couldn't find anything relevant in the knowledge base.",
+        }
+        yield {"type": "sources", "content": []}
+        return
+
+    prompt = build_prompt(question, top_chunks)
+    for token in ask_ollama_stream(prompt):
+        yield {"type": "answer", "content": token}
+
+    sources = sorted({c["_source"]["source"] for c in top_chunks})
+    yield {"type": "sources", "content": sources}
+
+
+def answer_question(question: str) -> dict:
+    trace = Trace()
+
+    with trace.step("hybrid_search_ms"):
+        top_chunks = hybrid_search(question)
+
+    if not top_chunks:
+        trace.log("ask", question)
         return {
             "answer": "I couldn't find anything relevant in the knowledge base.",
             "sources": [],
+            "timings": trace.steps,
         }
 
-    prompt = build_prompt(question, top_chunks)
-    answer = ask_ollama(prompt)
+    with trace.step("llm_generate_ms"):
+        prompt = build_prompt(question, top_chunks)
+        answer = ask_ollama(prompt)
+
     sources = sorted({c["_source"]["source"] for c in top_chunks})
 
-    return {"answer": answer, "sources": sources}
+    trace.log("ask", question)
+    return {"answer": answer, "sources": sources, "timings": trace.steps}
