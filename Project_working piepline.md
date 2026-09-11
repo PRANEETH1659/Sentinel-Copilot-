@@ -14,14 +14,14 @@ This turns text into a list of numbers (a "vector") that captures its meaning. E
 This is your local AI engine — it runs two different models for two different jobs:
 
 nomic-embed-text → creates those meaning-vectors above
-llama3.2 → the one that actually writes the answer in plain English once it has the right document chunks in front of it
+qwen2.5:7b (was llama3.2 until the compound-tool-call fix below) → the one that actually writes the answer in plain English once it has the right document chunks in front of it
 
 Putting it together — what happens when you hit /ask:
 
 Your question also gets turned into a vector (via Ollama's embedding model)
 Elasticsearch compares that vector + keywords against your 11 stored chunks, finds the most relevant ones
 Those chunks get stuffed into a prompt like: "Using this info, answer this question..."
-Ollama's llama3.2 reads that and writes the final answer
+Ollama's chat model (qwen2.5:7b) reads that and writes the final answer
 
 So really: Elasticsearch = memory, Ollama = brain (both for understanding and answering), Docker = the box that houses the memory, Embeddings = the translator that turns words into a "meaning" a computer can compare.
 

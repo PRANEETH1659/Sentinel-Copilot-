@@ -25,9 +25,14 @@ phase to touch it (`main_ph1.py` is Phase 1 even though Phase 2 added
 1. Docker Desktop installed and running (WSL2 backend)
 2. Ollama installed, with two models pulled:
    ```
-   ollama pull llama3.2
+   ollama pull qwen2.5:7b
    ollama pull nomic-embed-text
    ```
+   `qwen2.5:7b` is the default chat model (`app/config_ph1.py`). It replaced
+   `llama3.2` because the 3B model couldn't reliably make two tool calls in
+   one turn - see `PROGRESS.md` for the compound-routing fix. `llama3.2`
+   still works fine for `/ask` alone if you want the smaller download; set
+   `CHAT_MODEL=llama3.2` to use it.
 
 ## Run it
 
@@ -105,7 +110,8 @@ interactive UI (FastAPI generates this automatically) instead of using curl.
    lists using Reciprocal Rank Fusion (RRF) - see the big comment in that
    file for exactly how and why.
 3. The top merged chunks get stuffed into a prompt and sent to your local
-   Llama 3.2 model via Ollama, which answers using only that context.
+   chat model (`qwen2.5:7b` by default) via Ollama, which answers using only
+   that context.
 4. FastAPI (`app/main_ph1.py`) exposes this as a simple HTTP API.
 5. For `/ask-agent`, `app/agent_ph2.py` wraps steps 2-3 in a LangGraph loop: a
    `think` node where the model decides which tool fits (or that it already
@@ -120,14 +126,16 @@ interactive UI (FastAPI generates this automatically) instead of using curl.
   elasticsearch` if it's not healthy after a minute.
 - Ingest script hangs or errors on `embed_text` -> Ollama isn't running, or
   the model wasn't pulled. Test with `ollama run nomic-embed-text` /
-  `ollama run llama3.2` directly.
+  `ollama run qwen2.5:7b` directly.
 - Empty/weird answers -> check `docker compose logs elasticsearch` and make
   sure ingest actually ran (`python -m app.ingest_ph1`) before you started asking
   questions.
-- `/ask-agent` gives an empty answer or picks odd tools -> smaller local
-  models are hit-and-miss at emitting well-formed tool calls. Check `/ask`
-  first: if that works, retrieval is fine and it's the model's tool-calling,
-  not your setup.
+- `/ask-agent` gives an empty answer, skips a tool it should have called, or
+  narrates a tool call as text instead of actually calling it -> this was the
+  behavior with `llama3.2` (3B) on compound questions; `qwen2.5:7b` (the
+  default) fixes it. If you deliberately switched to a smaller model via
+  `CHAT_MODEL`, this is that model's tool-calling ceiling, not your setup -
+  check `/ask` first: if that works, retrieval is fine.
 
 ## What's next (Phase 3+)
 

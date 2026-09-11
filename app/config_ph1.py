@@ -8,7 +8,7 @@ ES_URL = os.getenv("ES_URL", "http://localhost:9200")
 ES_INDEX = os.getenv("ES_INDEX", "security_knowledge_base")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "llama3.2")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen2.5:7b")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 
 # nomic-embed-text always outputs 768-dimensional vectors. If you ever swap

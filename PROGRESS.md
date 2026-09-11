@@ -205,6 +205,74 @@ its two nodes (`think`, `act`), and `search_logs` still matches
 
 ---
 
+## Compound tool-calling fix — 2026-09-11
+
+Picked up where the 2026-08-28 prompt fix (`8163efa`) left off. That commit
+fixed the prompt's routing *rules* but left an open problem: `llama3.2`
+(3B) still couldn't reliably execute a compound question (procedure +
+named host, e.g. "Did the ransomware runbook get followed on WKSTN-042?")
+because it's a tool-calling capability limit, not a wording problem.
+
+Reproduced first, against the live venv (Elasticsearch + Ollama both up):
+- `llama3.2`: called `search_knowledge_base` once, then answered directly
+  from the runbook alone - never attempted `search_logs` at all. Answered
+  "the ransomware runbook was followed on WKSTN-042," the exact unverified
+  claim the 08-28 fix was trying to prevent.
+
+Tried `qwen2.5:7b` (already pulled locally, 4.7GB) as `CHAT_MODEL` instead:
+- Correctly called `search_knowledge_base` then `search_logs`, in order,
+  before answering, on the compound question - 3/3 test questions routed
+  correctly (single knowledge-base, single logs, compound).
+- Its first attempt at the compound case used a two-word log query
+  (`"WKSTN-042 ransomware"`), which surfaced a second, separate bug (next
+  item) rather than a model problem.
+
+### Bug found while testing: `search_logs` word matching
+`app/tools_ph2.py`'s `search_logs` matched the *whole* keyword string as one
+substring against each log entry. A capable model composing a natural
+multi-word query (host + topic, e.g. `"WKSTN-042 ransomware"`) got a false
+"no log entries found," even though a real entry existed for that host
+describing ransomware-consistent activity - the words just weren't
+contiguous in the JSON. That's the same failure mode as the 08-28 bug
+(reporting something as absent/present without real evidence), just
+flipped: false negative instead of false positive. Fixed by splitting the
+keyword on whitespace and requiring every word to appear somewhere in the
+entry (AND, not one contiguous substring) - single-word queries behave
+exactly as before.
+
+### Result: `qwen2.5:7b` is now the default `CHAT_MODEL`
+`app/config_ph1.py` changed - `llama3.2` remains available via
+`CHAT_MODEL=llama3.2` for anyone who wants the smaller (~2GB vs ~4.7GB)
+download and only needs `/ask` or single-tool `/ask-agent` questions.
+
+### Confirmed against the real venv (Elasticsearch + Ollama live)
+- [x] `llama3.2` reproduces the original bug: skips `search_logs` entirely
+      on the compound question, asserts an unverified fact
+- [x] `qwen2.5:7b` + the `search_logs` fix: all three test questions from
+      the Phase 2 log route correctly -
+      - "What is the ransomware runbook about?" -> `search_knowledge_base` only
+      - "Anything suspicious on WKSTN-042?" -> `search_logs` only
+      - "Did the ransomware runbook get followed on WKSTN-042?" -> both
+        tools, in order, then a grounded answer that lists what the logs
+        DO show (encryptor.exe, mass file rename, EDR auto-isolation) and
+        explicitly says it can't confirm the runbook's later steps
+        (scope identification, account disablement) from the available
+        logs - no hedging, no unverified claims
+- [x] Phase 1's `/ask` (`answer_question` in `app/rag_ph1.py`) re-verified
+      end-to-end with `qwen2.5:7b` as the new default - still returns a
+      grounded answer with sources, no regression from the model swap
+
+### Known minor quirk, not fixed (out of scope for this fix)
+`ask_agent()`'s source-collection walks every tool message in the
+conversation, so a compound answer's `sources` can include a knowledge-base
+chunk from a *different* runbook than the one actually discussed (observed:
+`runbook_phishing_response.txt` alongside `runbook_ransomware_response.txt`
+for a ransomware-only question) - `hybrid_search`'s `top_n=5` sometimes
+pulls in a related-but-different document. Pre-existing Phase 1 retrieval
+behavior, not something this fix touched.
+
+---
+
 ## Phase 3 — Production hardening (not started)
 Redis caching, streaming responses, latency tracing.
 

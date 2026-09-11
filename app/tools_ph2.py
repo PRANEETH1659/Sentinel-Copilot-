@@ -59,8 +59,17 @@ def search_logs(keyword: str) -> str:
     with open(LOGS_PATH, "r", encoding="utf-8") as f:
         logs = json.load(f)
 
+    # Split on whitespace and require every word to appear SOMEWHERE in the
+    # entry (not necessarily contiguous) - a capable model composing a
+    # multi-word query like "WKSTN-042 ransomware" should still match an
+    # entry whose host and event text contain both words, even if they're
+    # not adjacent in the JSON. A single-word keyword behaves exactly as
+    # before (plain substring containment).
+    words = keyword.lower().split()
     matches = [
-        entry for entry in logs if keyword.lower() in json.dumps(entry).lower()
+        entry
+        for entry in logs
+        if all(word in json.dumps(entry).lower() for word in words)
     ]
 
     if not matches:
