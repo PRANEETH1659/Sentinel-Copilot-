@@ -368,6 +368,71 @@ from the previous session.
 - [x] Pushed 4 commits to `origin/main` (`6800de7..c497453`): the file
       naming refactor, both Phase 2 agent fixes, and all of Phase 3
 
+## Semantic cache (Phase 3b) — 2026-09-13
+
+Redis caching from Phase 3 only recognizes a question it's seen byte-for-
+byte before (after trim/lowercase) - any rewording is a guaranteed miss,
+even though real usage rarely repeats the exact same sentence. This adds a
+second, fuzzier cache tier on top of the existing exact-match one, so a
+REWORDED repeat of a past question can still skip the expensive hybrid-
+search + LLM-generate path.
+
+### Code written
+- [x] `app/config_ph1.py` - added `ES_CACHE_INDEX` (`qa_cache`) and
+      `SEMANTIC_CACHE_SCORE_THRESHOLD` (default `0.93`, on ES's kNN cosine
+      score scale of 0-1)
+- [x] `app/cache_ph3.py` - added a new `qa_cache` Elasticsearch index
+      (`question`, `embedding`, `endpoint`, `model`, `result`,
+      `created_at`) and `ensure_cache_index()` to create it. `get_cached_answer`
+      now tries Redis exact-match first (unchanged, still free/instant),
+      and on a miss falls through to `_semantic_lookup()` - embeds the
+      question, kNN-searches `qa_cache` filtered to the same
+      endpoint+model, returns the top hit's answer if its score clears the
+      threshold. `set_cached_answer` now writes to both tiers on every
+      fresh answer. Same fail-open contract as the Redis tier - any
+      Elasticsearch/Ollama error during the semantic path returns `None`
+      instead of raising, so a semantic-cache outage degrades to "always
+      recompute," not a broken API.
+- [x] `app/main_ph1.py` - added a FastAPI startup hook that calls
+      `ensure_cache_index()`, so `qa_cache` exists before the first
+      request instead of being lazily (and wrongly - dynamic mapping
+      wouldn't make `embedding` a `dense_vector`) auto-created by ES on
+      first write.
+
+### Design decision: why Elasticsearch, not Redis Stack or Qdrant
+Considered three places to run the similarity search: swap Redis for
+Redis Stack (adds RediSearch's vector module), add Qdrant (a dedicated
+vector DB - already planned for Phase 4 log ingestion per the
+`docker-compose.yml` comment), or reuse Elasticsearch. Went with
+Elasticsearch - `embed_text()` and kNN search already exist for Phase 1's
+RAG pipeline, so this needed zero new infrastructure, just a second index.
+
+### Confirmed against the real venv (Elasticsearch + Redis + Ollama live)
+- [x] `qa_cache` index created automatically on `uvicorn --reload`
+      restart, with the correct explicit mapping (verified via
+      `GET _cat/indices`, not dynamically inferred)
+- [x] Fresh question ("What immediate actions should be taken when
+      ransomware is detected on a workstation?") → `cached:false`,
+      `hybrid_search_ms=2199.8`, `llm_generate_ms=49699.3`
+- [x] Reworded repeat ("If ransomware is found on a workstation, what
+      should I do right away?") → `cached:true`, identical answer,
+      returned near-instantly instead of regenerating - the semantic tier
+      fired correctly on completely different wording
+- [x] Unrelated question ("What should I check in SSH logs for suspicious
+      login attempts?") → `cached:false`, did NOT falsely match the
+      ransomware answer - threshold isn't too loose
+
+### Known limitations, not fixed (out of scope for now)
+- `SEMANTIC_CACHE_SCORE_THRESHOLD=0.93` is from one round of manual
+  testing, not tuned against a real paraphrase set - revisit if real
+  usage shows misses (too strict) or wrong-answer matches (too loose).
+- `qa_cache` has no TTL/cleanup, unlike Redis's `CACHE_TTL_SECONDS` - ES
+  has no native per-document expiry, so this index grows unboundedly.
+  Fine for a demo; a long-running deployment would need a scheduled
+  cleanup job on `created_at`.
+
+---
+
 ## Phase 4 — Event-driven ingestion (not started)
 Kafka/Redpanda producer + consumer for live alerts (this is what
 `search_logs` will read from instead of the Phase 2 mock file).

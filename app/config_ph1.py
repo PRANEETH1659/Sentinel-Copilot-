@@ -23,3 +23,16 @@ CHUNK_OVERLAP_CHARS = 150
 # Phase 3 - production hardening
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
+
+# Semantic cache (Phase 3b) - a second, fuzzier cache tier on top of the
+# exact-match Redis one. Stores past (question embedding -> answer) pairs in
+# their own Elasticsearch index, so a REWORDED repeat of a past question can
+# still skip the expensive hybrid-search + LLM-generate path.
+ES_CACHE_INDEX = os.getenv("ES_CACHE_INDEX", "qa_cache")
+
+# ES kNN score for cosine similarity is (1 + cosine_similarity) / 2, so this
+# lives on a 0-1 scale where 1.0 = identical vectors. Start conservative
+# (only near-duplicate phrasing counts as a hit) and tune down if real
+# paraphrases you'd expect to hit are missing - too low and unrelated
+# questions start sharing answers.
+SEMANTIC_CACHE_SCORE_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_SCORE_THRESHOLD", "0.93"))

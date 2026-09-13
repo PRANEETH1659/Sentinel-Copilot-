@@ -7,12 +7,26 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .agent_ph2 import ask_agent, ask_agent_stream
-from .cache_ph3 import get_cached_answer, get_client as get_redis_client, set_cached_answer
+from .cache_ph3 import (
+    ensure_cache_index,
+    get_cached_answer,
+    get_client as get_redis_client,
+    set_cached_answer,
+)
+from .es_client_ph1 import get_client as get_es_client
 from .rag_ph1 import answer_question, answer_question_stream
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 app = FastAPI(title="SentinelCopilot", version="0.3.0")
+
+
+@app.on_event("startup")
+def _ensure_semantic_cache_index():
+    """The semantic cache (app/cache_ph3.py) writes into its own ES index on
+    every /ask or /ask-agent call - it needs to exist before the first
+    request, not get lazily created mid-request."""
+    ensure_cache_index(get_es_client())
 
 
 class AskRequest(BaseModel):
