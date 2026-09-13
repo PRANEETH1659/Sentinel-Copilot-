@@ -354,6 +354,20 @@ time would mean a smaller/faster model or a quantized build - not pursued
 here since it trades off against the qwen2.5:7b tool-calling quality fix
 from the previous session.
 
+---
+
+## Pushed to GitHub — 2026-09-13
+
+- [x] Secrets audit before pushing: scanned the diff for
+      `api_key`/`secret`/`password`/`token`/`private_key`/etc. - only hits
+      were "token" in the streaming code's own comments and log messages
+      (LLM output tokens, not auth tokens). `.env` confirmed still untracked
+      and still in `.gitignore`; `app/config_ph1.py` and the new
+      `REDIS_URL`/`CACHE_TTL_SECONDS` are all `os.getenv` with localhost/
+      no-auth defaults.
+- [x] Pushed 4 commits to `origin/main` (`6800de7..c497453`): the file
+      naming refactor, both Phase 2 agent fixes, and all of Phase 3
+
 ## Phase 4 — Event-driven ingestion (not started)
 Kafka/Redpanda producer + consumer for live alerts (this is what
 `search_logs` will read from instead of the Phase 2 mock file).

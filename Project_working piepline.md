@@ -72,3 +72,48 @@ Which makes the edges:
 So the receptionist is `think`. It decides the department, `act` does the
 work, and it always comes back to reception - looping until there is
 nothing left to route, which is when the final answer comes out.
+
+---
+
+Phase 3 (written after the code was actually built, same as the LangGraph
+update above):
+
+🗄️ Redis
+A sticky-note memory, separate from Elasticsearch. Elasticsearch is the
+filing cabinet with ALL the documents; Redis just remembers "I already
+answered this exact question, here's what I said" so the second time
+around we skip searching the filing cabinet and skip asking Ollama
+entirely - just hand back the sticky note. Measured: ~71s down to 0.26s on
+a repeat question.
+
+The sticky note is labeled with the question AND which model answered it
+(`CHAT_MODEL`), not just the question - otherwise switching models later
+(like we did, llama3.2 -> qwen2.5:7b) could hand back an old answer
+written by a model we don't even use anymore.
+
+⏱️ Tracing (app/tracing_ph3.py)
+Just a stopwatch, nothing fancier. Every request gets its own `Trace`
+object (never shared between requests, so two people asking questions at
+the same time can't mix up each other's timings) that records how long
+each step took - `hybrid_search_ms`, `llm_generate_ms` - and that gets
+handed back in the response. Didn't reach for OpenTelemetry/Jaeger here;
+this is one Python process, not a fleet of microservices, so a plain
+dict of step-name -> milliseconds answers "where did the time go" just
+as well.
+
+📡 Streaming (`/ask/stream`, `/ask-agent/stream`)
+Instead of Ollama handing back the whole answer in one go, `stream: True`
+makes it hand back one word (technically one "token") at a time, and we
+forward each one to whoever's asking as it arrives - Server-Sent Events,
+which is just plain HTTP with `data: ...` lines instead of one JSON blob.
+Doesn't make the AI actually faster, just makes the wait feel shorter
+since you watch it type instead of staring at nothing.
+
+The agent version of this was the fiddly part: LangGraph's
+`stream_mode="messages"` streams tokens from EVERY model call in the
+graph, including the one that's just deciding which tool to use (that one
+has no real text, just an empty string + a tool-call). Checked this by
+hand before writing the real code: tool-call turns show up as empty-
+content chunks, and only the actual final-answer turn has real text - so
+we just skip forwarding anything with empty content, and the caller only
+ever sees real words.
