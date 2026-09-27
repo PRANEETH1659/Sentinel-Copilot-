@@ -433,9 +433,71 @@ RAG pipeline, so this needed zero new infrastructure, just a second index.
 
 ---
 
-## Phase 4 — Event-driven ingestion (not started)
-Kafka/Redpanda producer + consumer for live alerts (this is what
-`search_logs` will read from instead of the Phase 2 mock file).
+## Phase 4 — Event-driven ingestion — 2026-09-27
+
+Producer/consumer pair on Redpanda (Kafka-API-compatible), so a new alert
+gets chunked + embedded + stored in Elasticsearch automatically the moment
+it arrives - no manual `python -m app.ingest_ph1` run needed. Core loop
+proven end-to-end; wiring `search_logs` to read from this instead of the
+Phase 2 mock file is still open (see below).
+
+### Code written
+- [x] `app/producer_ph4.py` - announces an alert onto the `security-alerts`
+      topic. Stand-in for whatever eventually detects real alerts (log
+      monitor, IDS, SIEM webhook).
+- [x] `app/consumer_ph4.py` - listens on that topic; reuses
+      `ingest_ph1.chunk_text`, `embeddings_ph1.embed_text`,
+      `es_client_ph1.ensure_index`/`get_client` - same three-step filing
+      logic as Phase 1's `run_ingest()`, just triggered per-message instead
+      of per-file. No LLM involved in this path - that's still `/ask`'s job.
+- [x] `docker-compose.yml` - added `redpanda` service (single-node,
+      `--overprovisioned`, listener on `9092`)
+- [x] `app/config_ph1.py` - added `KAFKA_BOOTSTRAP_SERVERS`,
+      `KAFKA_ALERTS_TOPIC`
+- [x] `requirements.txt` - `kafka-python-ng` (see quirk below)
+
+### Environment setup
+- [x] `docker.redpanda.com` registry unreachable from this machine (DNS
+      failure on `docker compose up`) - switched the image to
+      `redpandadata/redpanda:latest` on Docker Hub, which pulled fine
+- [x] Verified with `docker exec -it redpanda rpk cluster info` - broker up
+- [x] Created topic: `docker exec -it redpanda rpk topic create
+      security-alerts` -> `OK`
+
+### Known quirks on this setup (so we don't re-debug them)
+- `echo text >> file` in PowerShell writes UTF-16, not UTF-8 - silently
+  corrupted `requirements.txt`'s `kafka-python` line (showed as null-byte-
+  separated characters when read back as UTF-8). Fixed by rewriting the
+  file cleanly; use `Add-Content` (or an explicit UTF-8 redirect) instead
+  of a bare `echo >>` when appending to text files in PowerShell.
+- `kafka-python` (the original PyPI package) is unmaintained and throws
+  `ModuleNotFoundError: No module named 'kafka.vendor.six.moves'` on this
+  Python version - a bug in its vendored `six` compat shim. Fixed by
+  swapping to `kafka-python-ng`, an actively maintained fork with an
+  identical `from kafka import ...` API - no code changes needed.
+
+### Confirmed against the real venv (Elasticsearch + Redpanda live)
+- [x] `pip install -r requirements.txt` picked up `kafka-python-ng` cleanly
+      after uninstalling the broken `kafka-python`
+- [x] `python -m app.consumer_ph4` started clean, reused the existing
+      `security_knowledge_base` index, printed `Listening on topic
+      'security-alerts'...`
+- [x] `python -m app.producer_ph4 "Failed SSH login attempts detected from
+      IP 203.0.113.45"` -> `Sent alert to 'security-alerts': ...`
+- [x] Consumer picked it up automatically and printed `Ingested alert from
+      'manual-test' (1 chunk(s)): Failed SSH login attempts detected from
+      IP 203.0.113.45` - full producer -> queue -> consumer -> Elasticsearch
+      loop confirmed, zero manual steps between send and store
+
+### Still to confirm
+- [ ] `search_logs` (`tools_ph2.py`) swapped from the Phase 2 mock
+      `mock_logs.json` file to actually query live-ingested alerts
+- [ ] Consumer survives being offline when a message is sent (start
+      producer first, then consumer, confirm it still picks up the
+      backlog via `auto_offset_reset="earliest"`)
+- [ ] Ask `/ask` or `/ask-agent` a question about this specific alert and
+      confirm it retrieves it from the live-ingested data, not just
+      `sample_docs`
 
 ## Phase 5 — Governance and deployment (not started)
 Audit logging, RBAC, PII redaction, Docker/Kubernetes, CI/CD.

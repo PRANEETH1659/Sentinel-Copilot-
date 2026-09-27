@@ -36,3 +36,7 @@ ES_CACHE_INDEX = os.getenv("ES_CACHE_INDEX", "qa_cache")
 # paraphrases you'd expect to hit are missing - too low and unrelated
 # questions start sharing answers.
 SEMANTIC_CACHE_SCORE_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_SCORE_THRESHOLD", "0.93"))
+
+# Phase 4 - event-driven ingestion
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+KAFKA_ALERTS_TOPIC = os.getenv("KAFKA_ALERTS_TOPIC", "security-alerts")

@@ -12,3 +12,9 @@ langchain-ollama==1.1.0
 
 # Phase 3 - production hardening
 redis==8.1.0
+
+# Phase 4 - event-driven ingestion
+# kafka-python (the original) is unmaintained and breaks on newer Python
+# versions (a bug in a vendored compatibility shim). kafka-python-ng is
+# the actively maintained fork - same `import kafka` API, no code changes.
+kafka-python-ng
