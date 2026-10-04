@@ -48,12 +48,12 @@ def reciprocal_rank_fusion(result_lists: list[list[dict]], k: int = 60) -> list[
     return [doc_lookup[doc_id] for doc_id in ranked_ids]
 
 
-def hybrid_search(query: str, top_n: int = 5) -> list[dict]:
+def hybrid_search(query: str, top_n: int = 5, index: str | None = None) -> list[dict]:
     es = get_client()
     query_vector = embed_text(query) # only for knn we are doing this one .
 
-    bm25_hits = bm25_search(es, query, k=10)
-    knn_hits = knn_search(es, query_vector, k=10)
+    bm25_hits = bm25_search(es, query, k=10, index=index)
+    knn_hits = knn_search(es, query_vector, k=10, index=index)
 
     fused = reciprocal_rank_fusion([bm25_hits, knn_hits])
     return fused[:top_n]

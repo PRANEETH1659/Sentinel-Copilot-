@@ -43,22 +43,24 @@ def ensure_index(es: Elasticsearch):
         print(f"Index '{config.ES_INDEX}' already exists - reusing it")
 
 
-def bm25_search(es: Elasticsearch, query: str, k: int = 10):
+def bm25_search(es: Elasticsearch, query: str, k: int = 10, index: str | None = None):
     """Keyword search. Great at exact terms like 'CVE-2024-3400' or 'PsExec'."""
     resp = es.search(
-        index=config.ES_INDEX,
+        index=index or config.ES_INDEX,
         query={"match": {"text": query}},
         size=k,
     )
     return resp["hits"]["hits"]
 
 
-def knn_search(es: Elasticsearch, query_vector: list[float], k: int = 10):
+def knn_search(
+    es: Elasticsearch, query_vector: list[float], k: int = 10, index: str | None = None
+):
     """Semantic search. Finds meaning-matches even with zero shared keywords -
     e.g. 'what do I do if a laptop gets encrypted by malware' will still
     match a document about 'ransomware response' with no words in common."""
     resp = es.search(
-        index=config.ES_INDEX,
+        index=index or config.ES_INDEX,
         knn={
             "field": "embedding",
             "query_vector": query_vector,

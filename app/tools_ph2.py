@@ -6,11 +6,9 @@
 # which tool fits a question. Keep these descriptions specific; a vague
 # description is the #1 reason an agent picks the wrong tool.
 
-import json
-import os
-
 from langchain_core.tools import tool
 
+from . import config_ph1 as config
 from .rag_ph1 import hybrid_search
 
 # ---------------------------------------------------------------------------
@@ -38,16 +36,13 @@ def search_knowledge_base(query: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool 2: search_logs. Phase 4 will wire this up to a real, live event
-# stream (Kafka/Redpanda). For now it just reads a small local JSON file of
-# made-up sample log lines - that's enough to give the agent a genuinely
-# different second tool to weigh against the first one. The point of Phase 2
-# is the DECIDING between tools, not the data source behind each tool.
+# Tool 2: search_logs. Phase 4's consumer (app/consumer_ph4.py) chunks and
+# embeds every live-ingested alert into its own Elasticsearch index
+# (config.ES_ALERTS_INDEX, separate from the knowledge-base index above) -
+# this just points the SAME hybrid_search used by search_knowledge_base at
+# that index instead, so live alerts get the same BM25+kNN+RRF retrieval
+# quality without duplicating any search logic.
 # ---------------------------------------------------------------------------
-
-LOGS_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "sample_logs", "mock_logs.json"
-)
 
 
 @tool
@@ -56,25 +51,11 @@ def search_logs(keyword: str) -> str:
     username, or process name. Use this for questions about live or recent
     system/server activity. Do NOT use this for questions about written
     documents, policies, or runbooks - use search_knowledge_base for those."""
-    with open(LOGS_PATH, "r", encoding="utf-8") as f:
-        logs = json.load(f)
-
-    # Split on whitespace and require every word to appear SOMEWHERE in the
-    # entry (not necessarily contiguous) - a capable model composing a
-    # multi-word query like "WKSTN-042 ransomware" should still match an
-    # entry whose host and event text contain both words, even if they're
-    # not adjacent in the JSON. A single-word keyword behaves exactly as
-    # before (plain substring containment).
-    words = keyword.lower().split()
-    matches = [
-        entry
-        for entry in logs
-        if all(word in json.dumps(entry).lower() for word in words)
-    ]
-
-    if not matches:
+    chunks = hybrid_search(keyword, top_n=5, index=config.ES_ALERTS_INDEX)
+    if not chunks:
         return f"No log entries found matching '{keyword}'."
 
     return "\n".join(
-        f"[{m['timestamp']}] {m['host']} - {m['event']}" for m in matches
+        f"[{c['_source'].get('received_at', 'unknown time')}] ({c['_source']['source']}) {c['_source']['text']}"
+        for c in chunks
     )

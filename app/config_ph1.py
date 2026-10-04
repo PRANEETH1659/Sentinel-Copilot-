@@ -40,3 +40,14 @@ SEMANTIC_CACHE_SCORE_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_SCORE_THRESHOLD
 # Phase 4 - event-driven ingestion
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_ALERTS_TOPIC = os.getenv("KAFKA_ALERTS_TOPIC", "security-alerts")
+
+# Live alerts get their own Elasticsearch index, separate from ES_INDEX (the
+# curated knowledge base) - same reasoning as ES_CACHE_INDEX above: a
+# dedicated index instead of overloading an existing one. See app/alerts_ph4.py.
+ES_ALERTS_INDEX = os.getenv("ES_ALERTS_INDEX", "security_live_alerts")
+
+# Phase 5a - audit logging. Every question asked is published to its own
+# Redpanda topic, then filed into its own index by a separate consumer. See
+# app/audit_ph5.py.
+KAFKA_AUDIT_TOPIC = os.getenv("KAFKA_AUDIT_TOPIC", "audit-events")
+ES_AUDIT_INDEX = os.getenv("ES_AUDIT_INDEX", "audit_log")

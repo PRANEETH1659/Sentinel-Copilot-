@@ -113,7 +113,7 @@ def ask_agent(question: str) -> dict:
 
         elif tool_name == "search_logs":
             if not msg.content.startswith("No log entries found"):
-                sources.add("sample_logs/mock_logs.json")
+                sources.add(config.ES_ALERTS_INDEX)
 
     trace.log("ask-agent", question)
     return {
@@ -147,7 +147,7 @@ def ask_agent_stream(question: str):
 
         elif tool_name == "search_logs":
             if not chunk.content.startswith("No log entries found"):
-                sources.add("sample_logs/mock_logs.json")
+                sources.add(config.ES_ALERTS_INDEX)
 
         elif chunk.content:
             yield {"type": "answer", "content": chunk.content}

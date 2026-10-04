@@ -66,6 +66,7 @@ volumes:
 # native background service (installed separately) so it can use your GPU
 # properly. It's reachable at http://localhost:11434 from our Python code.
 #
-# Qdrant and Redpanda (our Kafka stand-in) will be added to this file in
-# later phases, once we're actually using them - no point running
-# containers we don't need yet.
+# Qdrant was considered for Phase 3b's semantic cache and again for Phase
+# 4's live-alerts index, but both ended up reusing Elasticsearch instead
+# (see PROGRESS.md's Phase 3b design-decision note) - so it's no longer
+# planned. Redpanda (our Kafka stand-in, above) is already running.

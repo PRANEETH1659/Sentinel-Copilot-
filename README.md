@@ -4,7 +4,7 @@ An AI security-operations copilot that answers questions by hybrid-searching
 (keyword + semantic) a knowledge base of incident reports and runbooks, then
 asks a locally-running LLM to answer using only that retrieved context.
 
-Three phases are built and working:
+Four phases are built and working:
 
 - **Phase 1** (`/ask`) - always runs one fixed hybrid search, then answers.
 - **Phase 2** (`/ask-agent`) - a LangGraph agent decides *which* tool(s) to
@@ -13,6 +13,15 @@ Three phases are built and working:
   questions skip retrieval + generation entirely), a `timings` breakdown in
   every response, and streaming variants (`/ask/stream`, `/ask-agent/stream`)
   that return the answer token-by-token instead of all at once.
+- **Phase 4** - event-driven ingestion: a Redpanda (Kafka-API-compatible)
+  producer/consumer pair chunks, embeds, and stores each new alert into its
+  own Elasticsearch index (`security_live_alerts`) the moment it arrives, no
+  manual ingest step needed - that's what `search_logs` (used by
+  `/ask-agent`) actually searches now.
+- **Phase 5a** - audit logging: every question asked (any of the four
+  endpoints) publishes one audit event to its own Redpanda topic
+  (`audit-events`); a separate consumer files it into the `audit_log`
+  Elasticsearch index. Run it with `python -u -m app.audit_consumer_ph5`.
 
 All four non-streaming/streaming endpoint pairs stay live side by side on
 purpose, so you can compare them.
@@ -181,14 +190,13 @@ problem than caching a finished answer.
   `sentinel-redis`; the API still works either way, it just always
   recomputes.
 
-## What's next (Phase 4+)
+## What's next (Phase 5)
 
-Phase 2's `search_logs` currently reads a small local mock file
-(`sample_logs/mock_logs.json`). Still ahead:
+Phase 4 wired `search_logs` up to real, live-ingested alerts (Redpanda ->
+Elasticsearch's `security_live_alerts` index) instead of the Phase 2 mock
+file. What's left:
 
-- **Phase 4** - event-driven ingestion: Kafka/Redpanda feeding live alerts,
-  which is what `search_logs` will read from instead of the mock file.
-- **Phase 5** - governance and deployment: audit logging, RBAC, PII
-  redaction, Docker/Kubernetes, CI/CD.
+- **Phase 5b** - PII redaction (next).
+- **Phase 5c-e** - RBAC, CI/CD, Docker/Kubernetes. (5a, audit logging, is done.)
 
 See `PROGRESS.md` for the detailed build log.

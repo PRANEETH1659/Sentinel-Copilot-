@@ -499,5 +499,179 @@ Phase 2 mock file is still open (see below).
       confirm it retrieves it from the live-ingested data, not just
       `sample_docs`
 
-## Phase 5 — Governance and deployment (not started)
-Audit logging, RBAC, PII redaction, Docker/Kubernetes, CI/CD.
+## Phase 4 follow-up — live alerts wired to `search_logs` — 2026-09-30
+
+Closes out the three "Still to confirm" items above. `search_logs`
+(`app/tools_ph2.py`) now queries live-ingested alerts instead of the Phase 2
+mock file, and the consumer's offline-backlog recovery and live-retrieval
+behavior were both confirmed against the running stack.
+
+### Design decision: a separate `security_live_alerts` index, not the KB index
+The consumer (`app/consumer_ph4.py`) was writing every live alert into
+`config.ES_INDEX` (`security_knowledge_base`) - the SAME index `sample_docs/`
+live in. That meant live alerts were already retrievable via
+`search_knowledge_base`/`/ask`, directly contradicting that tool's own
+docstring ("Do NOT use this for questions about live or recent system
+activity"), and `search_logs` still couldn't see them at all (it read the
+dead `sample_logs/mock_logs.json` file). Fixed by giving live alerts their
+own index (`app/alerts_ph4.py`'s `ALERTS_INDEX_MAPPING` /
+`ensure_alerts_index()`, `config.ES_ALERTS_INDEX` = `security_live_alerts`)
+- the same pattern Phase 3b already established for the semantic cache
+(`qa_cache`, its own index rather than overloading the KB one). Reused
+Phase 1's exact BM25+kNN+RRF logic for the new index too, instead of
+duplicating it: `es_client_ph1.bm25_search`/`knn_search` and
+`rag_ph1.hybrid_search` all gained an optional `index` parameter (defaults
+to `config.ES_INDEX`, so every existing call site is unaffected), and
+`search_logs` just calls `hybrid_search(keyword, top_n=5,
+index=config.ES_ALERTS_INDEX)` instead of reading JSON.
+
+Also fixed a bug this uncovered in `app/agent_ph2.py`: `ask_agent`/
+`ask_agent_stream` were hardcoding `"sample_logs/mock_logs.json"` as the
+reported source for any `search_logs` hit - a literal string, not derived
+from the tool's actual output. Left alone, `/ask-agent` would have kept
+claiming answers came from a file that's no longer even read, even after
+`search_logs` itself was fixed. Now reports `config.ES_ALERTS_INDEX`.
+
+### Manual-test cleanup
+A stray `source="manual-test"` document was sitting in
+`security_knowledge_base` from the ad-hoc test alert sent while confirming
+the producer/consumer loop (2026-09-27 entry, above) - leftover from before
+this fix existed, when the consumer still wrote into the KB index. Removed
+via `delete_by_query` filtered on `source: "manual-test"`
+(`conflicts=proceed`, `refresh=true`): matched and deleted 1 document,
+0 version conflicts, count confirmed 0 afterward.
+
+### Confirmed against the real venv (Elasticsearch + Redpanda + Ollama live)
+- [x] `security_live_alerts` created automatically on API startup (the new
+      `_ensure_indices` startup hook in `main_ph1.py`) - confirmed via
+      `GET _cat/indices` showing it alongside `qa_cache` and
+      `security_knowledge_base` before the consumer had ever run
+- [x] Offline backlog recovery: sent an alert via `python -m
+      app.producer_ph4` with no consumer running, then started
+      `python -m app.consumer_ph4` - the alert was ingested and indexed
+      (confirmed via a direct ES query, `received_at:
+      "2026-09-30T17:48:30+00:00"`) even though the process was stopped
+      before its own "Ingested alert..." print line was observed - the
+      write to Elasticsearch itself is the real proof, not the log line
+- [x] The alert lands in `security_live_alerts`, NOT
+      `security_knowledge_base` - a direct-text search for the alert's
+      content (`"prod-db-07"`) returns exactly 1 hit in `security_live_alerts`
+      and the alert's actual text is absent from `security_knowledge_base`.
+      (A `match` query for the same keyword against `security_knowledge_base`
+      also returns 1 hit, but it's a pre-existing, unrelated sample doc
+      (`incident_2026_0142.txt`) that happens to share a token after
+      hyphen-splitting - confirmed by inspecting the actual hit, not the
+      alert leaking through.)
+- [x] `POST /ask-agent` with "Has there been any suspicious outbound data
+      transfer from prod-db-07 recently?" correctly routed to `search_logs`,
+      answered with the exact alert details (2.3GB, `198.51.100.23`, 4
+      minutes, DLP), and returned `"sources": ["security_live_alerts"]` -
+      proving both live retrieval and the `agent_ph2.py` source-bug fix
+      (`agent_reasoning_ms: 62544.7`)
+- [x] Regression check: `POST /ask` with "What is the ransomware runbook
+      about?" still answers correctly from `sample_docs/` only
+      (`sources: ["runbook_phishing_response.txt",
+      "runbook_ransomware_response.txt"]`, `hybrid_search_ms: 2255.3`,
+      `llm_generate_ms: 57819.8`), and the answer text contains no trace of
+      the live alert's content
+
+### Known quirk hit during this session, not a code bug
+Docker Desktop had stopped running between sessions (a Windows update had
+landed - the reported OS build number changed mid-conversation). `docker
+compose up -d` failed with `open //./pipe/dockerDesktopLinuxEngine: The
+system cannot find the file specified` until Docker Desktop itself was
+relaunched (`Start-Process "shell:AppsFolder\Docker.DockerForWindows.Settings"`
+- its installed `.exe` path isn't directly under `C:\Program Files\Docker`
+on this machine, so launching by its registered AppID was more reliable
+than guessing the path) and given time for the daemon to come up. Once it
+was up, `sentinel-es`/`sentinel-redis` (both `restart: unless-stopped`)
+came back on their own; `redpanda` (no restart policy set, and the only
+service with no data volume) needed an explicit `docker compose up -d` and
+came up as a fresh, empty broker.
+
+Separately: `python -m app.consumer_ph4` buffers `print()` output when its
+stdout isn't a real terminal (e.g. piped through `timeout` for a bounded
+test run), so log lines can appear late or not at all relative to when they
+actually ran - use `python -u -m app.consumer_ph4` (or
+`PYTHONUNBUFFERED=1`) when scripting a timed/bounded run of it, and verify
+actual ingestion against Elasticsearch directly rather than trusting the
+console output's timing in that situation.
+
+### Known limitations, not fixed (out of scope for now)
+- Live alerts have no structured `host` field (unlike the old mock log
+  entries, which had `host` as its own JSON key) - the producer only ever
+  sends free-text `text` + `source` + `timestamp`, so `search_logs` can
+  only full-text/semantically search alert bodies, not filter by an exact
+  host field. Fine for the current producer (a manual test stub); a real
+  alert source would probably want a structured `host` field added to both
+  the Kafka message and `ALERTS_INDEX_MAPPING`.
+- `security_live_alerts`, like `qa_cache`, has no TTL/cleanup - it grows
+  unboundedly. Fine for a demo; a long-running deployment would want a
+  retention policy (e.g. ILM) on `received_at`.
+
+## Phase 4 local re-test — 2026-10-04
+
+Came back after a 4-day gap and re-ran the whole stack locally (Docker:
+Elasticsearch + Redis + Redpanda; Ollama native). All `/ask`, `/ask-agent`
+and live-alert queries behaved as before - Phase 4 is closed out.
+
+## Phase 5 — Governance and deployment
+
+Planned order: 5a audit logging -> 5b PII redaction -> 5c RBAC -> 5d CI/CD +
+containerising the API -> 5e Kubernetes (stretch).
+
+### 5a — Audit logging — 2026-10-04
+
+Every question asked publishes one audit event (who/what/when/outcome) onto
+its own Redpanda topic, `audit-events`; a separate consumer files it into
+the `audit_log` Elasticsearch index. This is the second use of Redpanda's
+real strength: the API never waits on the audit write, and further readers
+of the same events (5b PII redaction, alerting) can be added without
+touching the API.
+
+#### Code written
+- [x] `app/audit_ph5.py` - `record_audit()` (publishes one event; a shared
+      lazily-created producer; **fails open** like the caches - if Redpanda
+      is down it logs a warning and the question still gets answered, with a
+      30s cooldown so a dead broker isn't retried on every request),
+      `AUDIT_INDEX_MAPPING`, `ensure_audit_index()`, `flush_audit()`
+- [x] `app/audit_consumer_ph5.py` - reads `audit-events` with its own
+      `group_id` (`sentinelcopilot-audit`), independent of Phase 4's alert
+      consumer, and indexes each event into `audit_log`
+- [x] `app/main_ph1.py` - `/ask` and `/ask-agent` wrapped by `_audited()`
+      (records success AND errors); `/ask/stream` and `/ask-agent/stream`
+      record from what actually streamed out; startup creates the index,
+      shutdown flushes the producer; version bumped to `0.4.0`
+- [x] `app/config_ph1.py` - `KAFKA_AUDIT_TOPIC`, `ES_AUDIT_INDEX`
+
+#### Recorded per event
+`timestamp`, `endpoint`, `question`, `client` (IP), `status` (ok/error),
+`cached`, `sources`, `answer_chars`, `duration_ms`, `error`.
+Deliberately **not** the answer text, only its length - answers can echo
+alert contents (IPs, hostnames), and deciding what is safe to store is 5b's
+job.
+
+#### Confirmed against the live stack
+- [x] Created the topic: `docker exec redpanda rpk topic create audit-events`
+- [x] `/ask` call -> consumer printed `Audited ask status=ok cached=True`;
+      `audit_log` held the document with sources, `answer_chars=614`,
+      `duration_ms`, `client=127.0.0.1`
+- [x] `/ask/stream` (uncached, ~87s) -> audit event recorded with
+      `endpoint=ask/stream`, `answer_chars=489`, correct sources
+- [x] Fail-open: with `KAFKA_BOOTSTRAP_SERVERS=localhost:1`, `record_audit`
+      raised nothing; first call took ~2s (broker connect timeout), later
+      calls 0.00s (cooldown)
+
+#### Not verified / known gaps
+- [ ] The `error` path (an endpoint raising mid-request) was not exercised
+      live - only written.
+- [ ] `/ask-agent` and `/ask-agent/stream` audit events were not sent live;
+      they use the same `_audited` / `_sse` code as the verified two.
+- `audit_log` has no retention policy and no way to read it except querying
+  Elasticsearch directly (no `/audit` endpoint yet - that belongs with 5c
+  RBAC, since an audit log should be admin-only).
+- Redpanda has no volume, so `audit-events` (and `security-alerts`) must be
+  recreated with `rpk topic create` after the container is recreated.
+
+### Next: 5b — PII redaction
+Mask IPs/emails/usernames before they are stored or returned.
