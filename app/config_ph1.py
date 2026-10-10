@@ -1,5 +1,11 @@
 import os
 
+from dotenv import load_dotenv
+
+# Reads a .env file in the project root, if there is one (see .env.example).
+# Real environment variables always win over the file.
+load_dotenv()
+
 # Everything defaults to localhost - no cloud accounts, no API keys, no cost.
 # Override any of these via a .env file later if you ever move to hosted
 # services, but for this project you shouldn't need to.
@@ -51,3 +57,15 @@ ES_ALERTS_INDEX = os.getenv("ES_ALERTS_INDEX", "security_live_alerts")
 # app/audit_ph5.py.
 KAFKA_AUDIT_TOPIC = os.getenv("KAFKA_AUDIT_TOPIC", "audit-events")
 ES_AUDIT_INDEX = os.getenv("ES_AUDIT_INDEX", "audit_log")
+
+# Phase 5b - PII redaction (see app/pii_ph5.py). Masks emails, phone numbers,
+# Aadhaar/PAN, card numbers, secrets and usernames in anything we STORE
+# (audit events, log lines). IPs are masked too by default; set this to
+# "false" if your audit reviewers need to see which IP a question was about.
+PII_REDACT_IPS = os.getenv("PII_REDACT_IPS", "true").lower() == "true"
+
+# Phase 5c - RBAC (see app/auth_ph5.py). Comma-separated key:user:role
+# entries, e.g. "k3y-aaa:priya:analyst,k3y-bbb:praneeth:admin".
+# Roles: analyst (ask questions), admin (ask + read the audit log).
+# Left empty, the API falls back to built-in DEV keys and logs a warning.
+API_KEYS = os.getenv("API_KEYS", "")

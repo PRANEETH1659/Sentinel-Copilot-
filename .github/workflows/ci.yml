@@ -1,0 +1,40 @@
+# Phase 5d - CI: runs on every push and pull request to main.
+# Three gates, in order; a red X on GitHub means one of them failed:
+#   1. lint  - ruff catches unused imports, undefined names, typos
+#   2. test  - pytest (no Elasticsearch/Ollama needed, see tests/)
+#   3. image - the Docker image builds and the app imports inside it
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint
+        run: ruff check app tests
+      - name: Test
+        run: python -m pytest -q
+
+  docker-image:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t sentinelcopilot:ci .
+      - name: Smoke test (app imports inside the image)
+        run: docker run --rm sentinelcopilot:ci python -c "import app.main_ph1; print('image OK')"
+      - name: Validate docker-compose.yml
+        run: docker compose --profile app config --quiet

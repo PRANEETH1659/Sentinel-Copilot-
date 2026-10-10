@@ -1,0 +1,7 @@
+# Lint rules used by CI (Phase 5d). E = style errors, F = real bugs
+# (unused imports, undefined names). Long lines are allowed.
+target-version = "py312"
+
+[lint]
+select = ["E", "F"]
+ignore = ["E501"]

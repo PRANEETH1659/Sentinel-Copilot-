@@ -59,6 +59,93 @@ services:
     ports:
       - "9092:9092"
       - "9644:9644"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Phase 5d: creates both topics once Redpanda is healthy, then exits.
+  # Fixes the old gap where `rpk topic create` had to be re-run by hand
+  # after the Redpanda container was recreated. "|| true" = topic already
+  # exists is fine.
+  redpanda-init:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        rpk topic create security-alerts -X brokers=redpanda:29092 || true;
+        rpk topic create audit-events -X brokers=redpanda:29092 || true
+    restart: "no"
+
+  # ---------------------------------------------------------------------
+  # Phase 5d: the app itself, containerised. These only start with
+  #     docker compose --profile app up -d --build
+  # so plain `docker compose up -d` still starts ONLY the infrastructure,
+  # exactly as before, and you can keep running uvicorn from your venv.
+  # Inside Docker, services find each other by service name
+  # (elasticsearch, redis, redpanda:29092), not localhost.
+  # ---------------------------------------------------------------------
+  api:
+    build: .
+    image: sentinelcopilot:latest
+    container_name: sentinel-api
+    profiles: ["app"]
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment: &app-env
+      ES_URL: http://elasticsearch:9200
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      OLLAMA_URL: http://host.docker.internal:11434
+    extra_hosts:
+      # Docker Desktop (Windows/Mac) already knows host.docker.internal;
+      # this line makes it work on Linux (e.g. CI) too.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    depends_on: &app-deps
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
+
+  alert-consumer:
+    build: .                       # same Dockerfile; layers are cached, so this is instant
+    image: sentinelcopilot:latest
+    container_name: sentinel-alert-consumer
+    profiles: ["app"]
+    restart: unless-stopped
+    command: ["python", "-u", "-m", "app.consumer_ph4"]
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: *app-deps
+
+  audit-consumer:
+    build: .                       # same Dockerfile; layers are cached, so this is instant
+    image: sentinelcopilot:latest
+    container_name: sentinel-audit-consumer
+    profiles: ["app"]
+    restart: unless-stopped
+    command: ["python", "-u", "-m", "app.audit_consumer_ph5"]
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
+    depends_on: *app-deps
+
 volumes:
   es_data:
 

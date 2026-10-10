@@ -13,6 +13,8 @@ import logging
 import time
 from contextlib import contextmanager
 
+from .pii_ph5 import redact_text
+
 logger = logging.getLogger("sentinelcopilot")
 
 
@@ -36,6 +38,8 @@ class Trace:
         return round(sum(self.steps.values()), 1)
 
     def log(self, endpoint: str, question: str, cached: bool = False):
+        # Phase 5b: log files are stored too, so the question is masked here.
+        question = redact_text(question)
         if cached:
             logger.info("%s question=%r cache=hit", endpoint, question)
             return

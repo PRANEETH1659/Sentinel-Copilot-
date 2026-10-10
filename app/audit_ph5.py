@@ -13,8 +13,15 @@
 # rather than turning a broker outage into a broken API.
 #
 # Deliberately NOT stored: the answer text. Only its length. Answers can echo
-# alert contents (IPs, hostnames); deciding what is safe to keep is Phase 5b's
-# (PII redaction) job, not something to guess at here.
+# alert contents (IPs, hostnames, usernames).
+#
+# Phase 5b: the question and error text are passed through app/pii_ph5.py
+# BEFORE publishing, so raw PII never even reaches the Redpanda topic (not
+# just the index). `pii_found` records WHAT kinds were masked, never values.
+#
+# Phase 5c: `user` and `role` record WHO asked (from their API key), and
+# status "denied" records refused attempts - an audit log that only shows
+# successful calls would miss the most interesting events.
 
 import json
 import logging
@@ -26,6 +33,7 @@ from elasticsearch import Elasticsearch
 from kafka import KafkaProducer
 
 from . import config_ph1 as config
+from .pii_ph5 import redact
 
 log = logging.getLogger("sentinelcopilot.audit")
 
@@ -36,12 +44,15 @@ AUDIT_INDEX_MAPPING = {
             "endpoint": {"type": "keyword"},
             "question": {"type": "text"},
             "client": {"type": "keyword"},
-            "status": {"type": "keyword"},  # "ok" | "error"
+            "user": {"type": "keyword"},
+            "role": {"type": "keyword"},
+            "status": {"type": "keyword"},  # "ok" | "error" | "denied"
             "cached": {"type": "boolean"},
             "sources": {"type": "keyword"},
             "answer_chars": {"type": "integer"},
             "duration_ms": {"type": "float"},
             "error": {"type": "text"},
+            "pii_found": {"type": "keyword"},
         }
     }
 }
@@ -52,6 +63,14 @@ def ensure_audit_index(es: Elasticsearch) -> None:
     the audit consumer - a no-op once the index exists."""
     if not es.indices.exists(index=config.ES_AUDIT_INDEX):
         es.indices.create(index=config.ES_AUDIT_INDEX, body=AUDIT_INDEX_MAPPING)
+    else:
+        # An index created by Phase 5a lacks the 5b/5c fields. Adding new
+        # fields to an existing mapping is allowed (changing old ones isn't),
+        # so this upgrades it in place instead of needing a delete + recreate.
+        es.indices.put_mapping(
+            index=config.ES_AUDIT_INDEX,
+            properties=AUDIT_INDEX_MAPPING["mappings"]["properties"],
+        )
 
 
 # One shared producer for the whole process (building one per request would
@@ -90,6 +109,8 @@ def record_audit(
     endpoint: str,
     question: str,
     client: str,
+    user: str = "anonymous",
+    role: str = "none",
     status: str = "ok",
     cached: bool = False,
     sources: list[str] | None = None,
@@ -102,19 +123,26 @@ def record_audit(
         producer = _get_producer()
         if producer is None:
             return
+        q = redact(question)
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "endpoint": endpoint,
-            "question": question,
+            "question": q.text,
             "client": client,
+            "user": user,
+            "role": role,
             "status": status,
             "cached": cached,
             "sources": sources or [],
             "answer_chars": answer_chars,
             "duration_ms": round(duration_ms, 1),
         }
+        found = set(q.found)
         if error:
-            event["error"] = error
+            e = redact(error)
+            event["error"] = e.text
+            found |= set(e.found)
+        event["pii_found"] = sorted(found)
         producer.send(config.KAFKA_AUDIT_TOPIC, value=event)
     except Exception as exc:
         log.warning("failed to record audit event: %s", exc)

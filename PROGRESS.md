@@ -663,15 +663,101 @@ job.
       calls 0.00s (cooldown)
 
 #### Not verified / known gaps
-- [ ] The `error` path (an endpoint raising mid-request) was not exercised
-      live - only written.
-- [ ] `/ask-agent` and `/ask-agent/stream` audit events were not sent live;
-      they use the same `_audited` / `_sse` code as the verified two.
+- [x] The `error` path - closed 2026-10-10, see "5b-5d live verification".
+- [x] `/ask-agent` audit event - closed 2026-10-10 (`/ask-agent/stream`
+      still not sent live; it shares the `_sse` code with `/ask/stream`).
 - `audit_log` has no retention policy and no way to read it except querying
   Elasticsearch directly (no `/audit` endpoint yet - that belongs with 5c
   RBAC, since an audit log should be admin-only).
 - Redpanda has no volume, so `audit-events` (and `security-alerts`) must be
   recreated with `rpk topic create` after the container is recreated.
 
-### Next: 5b — PII redaction
-Mask IPs/emails/usernames before they are stored or returned.
+### 5b — PII redaction — 2026-10-07
+
+Regex-based masking of private data in everything we **store**: audit
+events (before they even reach Redpanda) and log lines that echo the
+question. Answers returned to the analyst are deliberately **not** masked,
+because a security copilot that hides the attacker's IP is useless. Live
+users are protected by 5c instead.
+
+#### Code written
+- [x] `app/pii_ph5.py` - `redact()` returns masked text + counts per type.
+      Rules, in order: secrets (private keys, AWS/GitHub/OpenAI/Slack keys,
+      JWTs, Bearer tokens, `password=`/`token=` values), email, card
+      numbers (Luhn-checked, so order IDs aren't masked), Aadhaar, PAN,
+      Indian + international phones, `user=`/`login:` values, IPv4
+- [x] `app/audit_ph5.py` - question + error redacted before publishing;
+      new `pii_found` field (types only, never values); `ensure_audit_index`
+      now adds new fields to an existing 5a index via `put_mapping`
+- [x] `app/tracing_ph3.py`, `app/main_ph1.py` - log lines redacted
+- [x] `app/config_ph1.py` - `PII_REDACT_IPS` (default true)
+- [x] `tests/test_pii_ph5.py`, `tests/test_audit_ph5.py`
+
+#### Known limits
+- Regex can't detect bare person names ("ask Ravi") - would need an NLP
+  model (Microsoft Presidio). IPv6 is not masked.
+
+### 5c — RBAC with API keys — 2026-10-07
+
+#### Code written
+- [x] `app/auth_ph5.py` - `X-API-Key` header -> `Principal(user, role)`;
+      roles map to permissions (`analyst`: ask; `admin`: ask + audit);
+      endpoints require a *permission*, not a role. Keys are kept only as
+      SHA-256 hashes. 401 = unknown key, 403 = wrong role; both audited as
+      `status: "denied"`. Bad `API_KEYS` config fails at startup.
+- [x] `app/main_ph1.py` - all four `/ask*` endpoints require `ask`; new
+      `GET /whoami`, new admin-only `GET /audit` (filters: status, user,
+      endpoint, limit; newest first); audit events carry `user` + `role`;
+      version `0.5.0`
+- [x] `app/config_ph1.py` - `API_KEYS`; loads `.env` via python-dotenv
+- [x] `.env.example`; dev keys `dev-analyst-key` / `dev-admin-key` used
+      (with a startup warning) when `API_KEYS` is unset
+- [x] `tests/test_auth_ph5.py` - 401/403/200 paths, `/audit` filters
+
+### 5d — Containerisation + CI — 2026-10-07
+
+#### Code written
+- [x] `Dockerfile` - python:3.12-slim, deps layer cached before code,
+      non-root user, `HEALTHCHECK` on `/health`; `.dockerignore`
+- [x] `docker-compose.yml` - Redpanda healthcheck; `redpanda-init` creates
+      `security-alerts` + `audit-events` automatically (fixes the 5a gap);
+      `api`, `alert-consumer`, `audit-consumer` under the `app` profile
+      (`docker compose --profile app up -d --build`), Ollama reached at
+      `host.docker.internal`
+- [x] `.github/workflows/ci.yml` - ruff lint -> pytest -> Docker build +
+      import smoke test + compose validation
+- [x] `requirements-dev.txt`, `ruff.toml`
+
+#### Verified (in Claude's sandbox)
+- [x] 30 tests pass, ruff clean, `docker compose --profile app config` valid
+
+#### 5b-5d live verification - 2026-10-10 (Praneeth's machine)
+Docker Desktop had stopped again; relaunched it, then
+`docker compose --profile app up -d --build`.
+- [x] Image built; `api`, `alert-consumer`, `audit-consumer`, `redpanda`,
+      `redis`, `elasticsearch` all up, API container `healthy`
+- [x] `redpanda-init` created `security-alerts` + `audit-events` on its own
+      (no manual `rpk topic create` needed any more)
+- [x] 401 with no key, 403 for analyst on `/audit`, `/whoami` returns
+      `analyst1` / `analyst` - and both denials show up in `/audit` as
+      `status: "denied"`
+- [x] `/ask` (analyst key) with "Email from bob.smith@example.com says reset
+      password=Hunter2 ... Source IP 203.0.113.9": answer returned
+      unmasked (by design); `/audit` (admin key) stored
+      `Email from [REDACTED_EMAIL] says reset password=[REDACTED_SECRET] ...
+      Source IP [REDACTED_IP]` with `pii_found: [EMAIL, IP, SECRET]`
+- [x] `/ask-agent` -> `search_logs`, `sources: [security_live_alerts]`, audit
+      event recorded
+- [x] Error path: stopped Elasticsearch, `/ask` returned 500, and the audit
+      log held an `status: "error"` event with the connection error. ES was
+      restarted afterwards.
+- [ ] GitHub Actions run green - checked after the push (below)
+
+#### Not done: eval harness
+`app/eval_ph5.py` + `eval/eval_questions.json` (scores tool choice, sources,
+keywords, seconds per question) is written but was **not run** - a full run
+is ~1 min per question on local Ollama. Run with
+`python -m app.eval_ph5 --seed` then `python -m app.eval_ph5`.
+
+### Next: 5e — Kubernetes (stretch, optional)
+Decide after 5d is running locally.

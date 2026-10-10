@@ -1,0 +1,123 @@
+[
+  {
+    "id": "kb-01",
+    "category": "knowledge_base",
+    "question": "What is the ransomware runbook about?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": ["runbook_ransomware_response.txt"],
+    "answer_mentions_any": ["isolat", "ransomware"]
+  },
+  {
+    "id": "kb-02",
+    "category": "knowledge_base",
+    "question": "Should I power off a laptop that has been hit by ransomware?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": ["runbook_ransomware_response.txt"],
+    "answer_mentions_any": ["memory", "evidence", "do not power", "not power"]
+  },
+  {
+    "id": "kb-03",
+    "category": "knowledge_base",
+    "question": "Who decides whether the company pays a ransom?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": ["runbook_ransomware_response.txt"],
+    "answer_mentions_any": ["legal", "executive"]
+  },
+  {
+    "id": "kb-04",
+    "category": "knowledge_base",
+    "question": "What are the steps to respond to a phishing email?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": ["runbook_phishing_response.txt"],
+    "answer_mentions_any": ["triage", "contain", "purge"]
+  },
+  {
+    "id": "kb-05",
+    "category": "knowledge_base",
+    "question": "When do we have to file an incident report for a phishing campaign?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": ["runbook_phishing_response.txt"],
+    "answer_mentions_any": ["25"]
+  },
+  {
+    "id": "kb-06",
+    "category": "knowledge_base",
+    "question": "What was the root cause of incident INC-2026-0142?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": ["incident_2026_0142.txt"],
+    "answer_mentions_any": ["leaked", "credential"]
+  },
+  {
+    "id": "kb-07",
+    "category": "knowledge_base",
+    "question": "After the credential stuffing attack, what was the new rate limit on the login endpoint?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": ["incident_2026_0142.txt"],
+    "answer_mentions_any": ["20"]
+  },
+  {
+    "id": "log-01",
+    "category": "logs",
+    "question": "Anything suspicious on WKSTN-042?",
+    "expected_tools": ["search_logs"],
+    "expected_sources": ["security_live_alerts"],
+    "answer_mentions_any": ["encryptor"]
+  },
+  {
+    "id": "log-02",
+    "category": "logs",
+    "question": "What happened on WKSTN-017?",
+    "expected_tools": ["search_logs"],
+    "expected_sources": ["security_live_alerts"],
+    "answer_mentions_any": ["link", "phishing", "blocked"]
+  },
+  {
+    "id": "log-03",
+    "category": "logs",
+    "question": "Were there any failed SSH logins on SRV-WEB-01?",
+    "expected_tools": ["search_logs"],
+    "expected_sources": ["security_live_alerts"],
+    "answer_mentions_any": ["5 attempts", "five", "blocked"]
+  },
+  {
+    "id": "log-04",
+    "category": "logs",
+    "question": "Did the nightly backup on SRV-DB-02 finish?",
+    "expected_tools": ["search_logs"],
+    "expected_sources": ["security_live_alerts"],
+    "answer_mentions_any": ["success", "completed"]
+  },
+  {
+    "id": "both-01",
+    "category": "compound",
+    "question": "Did the ransomware runbook get followed on WKSTN-042?",
+    "expected_tools": ["search_knowledge_base", "search_logs"],
+    "expected_sources": ["runbook_ransomware_response.txt", "security_live_alerts"],
+    "answer_mentions_any": ["isolat"]
+  },
+  {
+    "id": "both-02",
+    "category": "compound",
+    "question": "The phishing runbook says what to do after a user clicks a malicious link. Did that happen for the user on WKSTN-017?",
+    "expected_tools": ["search_knowledge_base", "search_logs"],
+    "expected_sources": ["runbook_phishing_response.txt", "security_live_alerts"],
+    "answer_mentions_any": ["password", "session", "reset"]
+  },
+  {
+    "id": "both-03",
+    "category": "compound",
+    "question": "Compare the SSH login activity on SRV-WEB-01 with how incident INC-2026-0142 handled repeated failed logins.",
+    "expected_tools": ["search_knowledge_base", "search_logs"],
+    "expected_sources": ["incident_2026_0142.txt", "security_live_alerts"],
+    "answer_mentions_any": ["rate limit", "captcha", "blocked"]
+  },
+  {
+    "id": "ground-01",
+    "category": "grounding",
+    "question": "What is our company policy on using personal USB drives?",
+    "expected_tools": ["search_knowledge_base"],
+    "expected_sources": null,
+    "answer_mentions_any": ["no information", "doesn't", "does not", "not mention", "no mention", "not contain", "not covered", "couldn't find", "could not find", "not found", "not available"],
+    "note": "Nothing in the knowledge base covers this. A good answer says so instead of inventing a policy."
+  }
+]
