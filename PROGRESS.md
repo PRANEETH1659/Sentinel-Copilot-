@@ -128,16 +128,13 @@ side by side — same retrieval underneath, different decision-making on top.
       compiled graph reports its two nodes, and `search_logs` returns real
       matches for `WKSTN-042`
 
-### Still to confirm — these need Elasticsearch + Ollama actually running
-- [ ] `POST /ask-agent` with a knowledge-base-style question (e.g. "What is
-      the ransomware runbook about?") picks `search_knowledge_base` and
-      returns sources like `/ask` does
-- [ ] `POST /ask-agent` with a log-style question (e.g. "Anything suspicious
-      on WKSTN-042?") picks `search_logs` instead
-- [ ] A question needing both (e.g. "Did the ransomware runbook get
-      followed on WKSTN-042?") makes the agent call both tools before
-      answering — this is the one that actually proves the loop, not just
-      the tool-picking
+### Phase 2 routing checks - confirmed 2026-09-11, ticked 2026-10-11
+The three questions below were first left open here, then run against the live
+stack in the "Compound tool-calling fix" entry further down (with
+`qwen2.5:7b`); the evidence is in that entry.
+- [x] `POST /ask-agent` knowledge-base question -> `search_knowledge_base` only
+- [x] `POST /ask-agent` log question -> `search_logs` only
+- [x] Compound question -> both tools, in order, then a grounded answer
 
 ---
 
@@ -760,4 +757,41 @@ is ~1 min per question on local Ollama. Run with
 `python -m app.eval_ph5 --seed` then `python -m app.eval_ph5`.
 
 ### Next: 5e — Kubernetes (stretch, optional)
-Decide after 5d is running locally.
+5d now runs locally (see "5b-5d live verification"); decide whether 5e is wanted.
+
+---
+
+## Pushed to GitHub - 2026-10-10
+
+- [x] Secrets audit: no `.env`, keys or tokens in the tree. Only hits were
+      comments, test fixtures and the documented dev keys in `.env.example`
+- [x] Committed and pushed Phase 5b-5d + eval harness as `ee4a6e0`
+      (`ec9b27b..ee4a6e0`); local `main` == `origin/main`, tree clean
+- [x] `.gitignore` gained `.pytest_cache/`, `.ruff_cache/`, `eval/results/`
+
+## Open items - 2026-10-11
+
+Single list of everything still pending, so it is not scattered across entries.
+
+### Needs checking / running
+- [ ] **GitHub Actions** - open the Actions tab for `ee4a6e0`; tick this once
+      green (CI has never run before, so a first-run failure is plausible).
+      `gh` is not installed here and the unauthenticated API was rate-limited,
+      so Claude could not read the result.
+- [ ] **Eval harness** - `app/eval_ph5.py` + `eval/eval_questions.json` are
+      committed but never run (~1 min per question on local Ollama):
+      `python -m app.eval_ph5 --seed` then `python -m app.eval_ph5`.
+- [ ] `/ask-agent/stream` audit event not sent live (shares `_sse` code with
+      `/ask/stream`, which is verified).
+
+### Optional
+- [ ] 5e Kubernetes (stretch)
+
+### Known gaps carried forward (not planned)
+- `qa_cache`, `security_live_alerts`, `audit_log` have no retention policy.
+- `SEMANTIC_CACHE_SCORE_THRESHOLD=0.93` untuned.
+- Live alerts have no structured `host` field.
+- Redaction is regex-only: no bare person names, no IPv6.
+- `@app.on_event` startup/shutdown hooks are deprecated in FastAPI - move to
+  a `lifespan` handler (pytest warns about it).
+- First-answer latency on local Ollama is ~60-170s.

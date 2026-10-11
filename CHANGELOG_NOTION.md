@@ -1,7 +1,7 @@
-# SentinelCopilot — Full Build Log (Phases 1–4)
+# SentinelCopilot — Full Build Log (Phases 1–5)
 
 Sequential, oldest first. Each entry: **Change → Purpose → Content**.
-Phase 5 (governance and deployment) has not started.
+Phase 5 (governance and deployment) is built; see the end of the file for what is still open.
 
 ---
 
@@ -100,7 +100,7 @@ Phase 5 (governance and deployment) has not started.
   - Windows `echo >>` wrote UTF-16 and corrupted `requirements.txt`. Use `Add-Content` instead.
   - Verified: the full producer to queue to consumer to Elasticsearch loop worked.
 
-## 2026-09-30 — Live alerts wired to `search_logs` (uncommitted)
+## 2026-09-30 — Live alerts wired to `search_logs` (`ec9b27b`)
 - **Change:**
   - Added `alerts_ph4.py` and the `security_live_alerts` index (`ES_ALERTS_INDEX`).
   - The consumer now writes there instead of the KB index.
@@ -122,5 +122,57 @@ Phase 5 (governance and deployment) has not started.
 
 ---
 
-# Phase 5 — Governance and Deployment (not started)
-Audit logging, RBAC, PII redaction, Docker/Kubernetes, CI/CD.
+# Phase 5 — Governance and Deployment
+
+## 2026-10-04 — 5a Audit logging (`ec9b27b`)
+- **Change:** Added `audit_ph5.py` (`record_audit`, `ensure_audit_index`, `flush_audit`) and `audit_consumer_ph5.py`, wrapped all four `/ask*` endpoints, added `KAFKA_AUDIT_TOPIC` and `ES_AUDIT_INDEX`, and bumped the app to `0.4.0`.
+- **Purpose:** Keep a record of who asked what, without making the API wait on it.
+- **Content:**
+  - Each question publishes one event to a Redpanda `audit-events` topic. A separate consumer files it into the `audit_log` index.
+  - It fails open: if Redpanda is down the question is still answered, with a 30s cooldown so a dead broker isn't retried on every request.
+  - Only the answer's length is stored, never its text, because answers can echo IPs and hostnames.
+  - Verified: events for `/ask` and `/ask/stream` landed in `audit_log`.
+
+## 2026-10-07 — 5b PII redaction (`ee4a6e0`)
+- **Change:** Added `pii_ph5.py` (`redact()`), redaction in `audit_ph5.py`, `tracing_ph3.py` and `main_ph1.py` log lines, `PII_REDACT_IPS`, and a `pii_found` audit field.
+- **Purpose:** Don't store private data in the audit log or server logs.
+- **Content:**
+  - It masks secrets and keys, emails, Luhn-checked card numbers, Aadhaar, PAN, phone numbers, `user=`/`login:` values and IPv4.
+  - Answers returned to the analyst are deliberately not masked; live users are protected by 5c instead.
+  - `pii_found` records the types only, never the values.
+  - Limits: no bare person names and no IPv6.
+
+## 2026-10-07 — 5c RBAC with API keys (`ee4a6e0`)
+- **Change:** Added `auth_ph5.py`, `GET /whoami`, an admin-only `GET /audit`, `API_KEYS` config with `.env` loading, `.env.example`, and bumped the app to `0.5.0`.
+- **Purpose:** Control who can ask questions and who can read the audit log.
+- **Content:**
+  - `X-API-Key` maps to a user and role. `analyst` can ask; `admin` can ask and read `/audit`.
+  - Endpoints require a permission, not a role. Keys are kept only as SHA-256 hashes.
+  - 401 means unknown key and 403 means wrong role. Both are audited as `denied`.
+  - Dev keys are used with a startup warning when `API_KEYS` is unset.
+
+## 2026-10-07 — 5d Containerisation and CI (`ee4a6e0`)
+- **Change:** Added `Dockerfile`, `.dockerignore`, an `app` compose profile (`api`, `alert-consumer`, `audit-consumer`), a `redpanda-init` service, a Redpanda healthcheck, `.github/workflows/ci.yml`, `requirements-dev.txt` and `ruff.toml`.
+- **Purpose:** Run the whole stack with one command and check every push automatically.
+- **Content:**
+  - `redpanda-init` creates `security-alerts` and `audit-events` automatically, which fixes the manual `rpk topic create` gap.
+  - CI runs ruff, pytest, then a Docker build with an import smoke test and compose validation.
+  - 30 tests passed and ruff was clean in the sandbox.
+
+## 2026-10-10 — Live verification and GitHub push (`ee4a6e0`)
+- **Change:** Ran the full stack on the real machine, updated `PROGRESS.md`, added `.pytest_cache/`, `.ruff_cache/` and `eval/results/` to `.gitignore`, and pushed.
+- **Purpose:** Close the unverified 5b–5d items before publishing.
+- **Content:**
+  - Docker Desktop had stopped again and was relaunched; the image built and all six services came up healthy.
+  - 401 and 403 behaved correctly, and both were audited as `denied`.
+  - A question containing an email, a password and an IP came back unmasked, while `/audit` showed `[REDACTED_EMAIL]`, `[REDACTED_SECRET]`, `[REDACTED_IP]` and `pii_found: [EMAIL, IP, SECRET]`.
+  - `/ask-agent` routed to `search_logs` and its audit event was recorded.
+  - With Elasticsearch stopped, `/ask` returned 500 and the audit log recorded a `status: "error"` event.
+  - The commit also included the eval harness (`app/eval_ph5.py`, `eval/eval_questions.json`), which has not been run.
+
+## Open items (2026-10-11)
+- GitHub Actions result for `ee4a6e0` has not been checked.
+- Eval harness written but never run.
+- `/ask-agent/stream` audit event not sent live.
+- 5e Kubernetes is optional and undecided.
+- Carried-forward gaps: no retention on `qa_cache`, `security_live_alerts` or `audit_log`; untuned semantic-cache threshold; no structured `host` field on alerts; regex redaction misses names and IPv6; deprecated `@app.on_event` hooks.
